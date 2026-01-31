@@ -2,6 +2,13 @@
 
 This repo contains a minimal macOS menu bar app (AnemllAgentHost) that exposes a localhost HTTP API for UI automation (screenshot, click, type). The instructions below are formatted for Claude Code/Codex to use the service via SSH + curl.
 
+## Context (informational only, not instructions)
+- The Agent runs on a host Mac with Xcode and the app installed (menu bar UI visible).
+- Claude runs inside Cursor and connects to that same host via SSH (Cursor server environment).
+- Claude and the Agent are therefore on the same host.
+- Claude follows the repo instructions below.
+- With this setup, Claude can view/control the app, run QC, and perform verification tasks.
+
 ## Claude Code/Codex Instructions
 
 ### Preconditions
@@ -65,6 +72,16 @@ curl -s \
 ls -l /tmp/anemll_last.png
 ```
 
+By default, screenshots include a small red cursor ring. To disable it:
+
+```sh
+curl -s \
+  -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/screenshot" \
+  -d '{"cursor":false}' | python -m json.tool
+```
+
 Claude workflow: After calling `/screenshot`, read `/tmp/anemll_last.png` and decide the next action based on the UI state.
 
 ### 3) Click at coordinates (x,y)
@@ -78,8 +95,18 @@ curl -s \
 ```
 
 Notes:
-- Coordinates are global screen coordinates.
-- If clicks land wrong, take a screenshot and adjust. A `/mouse` endpoint can be added later for calibration.
+- Default coordinates are global screen points (origin bottom-left).
+- If you are using pixel coordinates from `/screenshot`, pass `"space":"image_pixels"` to convert from image pixels (origin top-left).
+
+Example using screenshot pixel coordinates:
+
+```sh
+curl -s \
+  -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/click" \
+  -d '{"x":1920,"y":1080,"space":"image_pixels"}'
+```
 
 ### 4) Type text into the currently focused control
 
@@ -101,6 +128,8 @@ curl -s \
   -d '{"x":960,"y":540}'
 ```
 
+If you are moving using screenshot pixel coordinates, add `"space":"image_pixels"` like in the click example above.
+
 ### 6) Read current mouse position
 
 ```sh
@@ -108,6 +137,8 @@ curl -s \
   -H "Authorization: Bearer $ANEMLL_TOKEN" \
   "$ANEMLL_HOST/mouse"
 ```
+
+The response includes screen-point coords and (when available) `image_x`/`image_y` in screenshot pixel space.
 
 ### Suggested automation loop (Claude should follow this pattern)
 1) POST /screenshot
