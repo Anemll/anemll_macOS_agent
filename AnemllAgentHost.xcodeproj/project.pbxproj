@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -11,6 +11,7 @@
 		4603C48762705FBCD65566D3 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55C4F05153B97E1E2788549E /* ContentView.swift */; };
 		710BCE35BB5B0BA1BD2662AD /* AnemllAgentHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F2E2556D4C1CC6FA955D3BD /* AnemllAgentHostApp.swift */; };
 		92809023BC55F38E192519B1 /* LocalHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C6E5868F35D8DEBAEDC878 /* LocalHTTPServer.swift */; };
+		A3EAE0F38AEBFFAE698E95CF /* CursorOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F3716353126ADE867054BB4 /* CursorOverlay.swift */; };
 		C4FB9F7DBE7AC3437CDE8D23 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40BE2C844E335C663384FD7E /* AppDelegate.swift */; };
 		D3A2B527F8683E8642728ABC /* HostViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC717FE689D299D9C26335A /* HostViewModel.swift */; };
 /* End PBXBuildFile section */
@@ -22,6 +23,7 @@
 		55C4F05153B97E1E2788549E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		6AE27F3CF6A4D351999C3BFF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		7F2E2556D4C1CC6FA955D3BD /* AnemllAgentHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnemllAgentHostApp.swift; sourceTree = "<group>"; };
+		7F3716353126ADE867054BB4 /* CursorOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorOverlay.swift; sourceTree = "<group>"; };
 		E10DB755905C0F7BA9EA1094 /* AnemllAgentHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AnemllAgentHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F5C6E5868F35D8DEBAEDC878 /* LocalHTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHTTPServer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -33,6 +35,7 @@
 				7F2E2556D4C1CC6FA955D3BD /* AnemllAgentHostApp.swift */,
 				40BE2C844E335C663384FD7E /* AppDelegate.swift */,
 				55C4F05153B97E1E2788549E /* ContentView.swift */,
+				7F3716353126ADE867054BB4 /* CursorOverlay.swift */,
 				1BC717FE689D299D9C26335A /* HostViewModel.swift */,
 				6AE27F3CF6A4D351999C3BFF /* Info.plist */,
 				F5C6E5868F35D8DEBAEDC878 /* LocalHTTPServer.swift */,
@@ -101,6 +104,7 @@
 			);
 			mainGroup = 294C2462670EBFDCBFCB6206;
 			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -117,6 +121,7 @@
 				710BCE35BB5B0BA1BD2662AD /* AnemllAgentHostApp.swift in Sources */,
 				C4FB9F7DBE7AC3437CDE8D23 /* AppDelegate.swift in Sources */,
 				4603C48762705FBCD65566D3 /* ContentView.swift in Sources */,
+				A3EAE0F38AEBFFAE698E95CF /* CursorOverlay.swift in Sources */,
 				D3A2B527F8683E8642728ABC /* HostViewModel.swift in Sources */,
 				92809023BC55F38E192519B1 /* LocalHTTPServer.swift in Sources */,
 				247598DA69F0CBEF967008C0 /* ScreenAndInput.swift in Sources */,
@@ -132,7 +137,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = ARRY5366Y3;
 				INFOPLIST_FILE = AnemllAgentHost/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -274,7 +278,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = ARRY5366Y3;
 				INFOPLIST_FILE = AnemllAgentHost/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
