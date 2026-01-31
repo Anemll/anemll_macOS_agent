@@ -2,6 +2,10 @@
 
 This repo contains a minimal macOS menu bar app (AnemllAgentHost) that exposes a localhost HTTP API for UI automation (screenshot, click, type). The instructions below are formatted for Claude Code/Codex to use the service via SSH + curl.
 
+## Overview tips
+- Use the lowest macOS screen resolution (1344x756) to reduce coordinate drift.
+- If testing iPhone UI, use iPhone screen sharing and keep the mirrored iPhone near the top-left of the screen.
+
 ## Context (informational only, not instructions)
 - The Agent runs on a host Mac with Xcode and the app installed (menu bar UI visible).
 - Claude runs inside Cursor and connects to that same host via SSH (Cursor server environment).

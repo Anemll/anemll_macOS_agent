@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
@@ -34,6 +35,9 @@ enum ScreenAndInput {
         }
     }
 
+    private static var lastCaptureScale: Double?
+    private static var lastCaptureBounds: CGRect?
+
     // Writes /tmp/anemll_last.png and returns info JSON
     static func takeScreenshot(path: String = "/tmp/anemll_last.png", includeCursor: Bool = true) throws -> [String: Any] {
         guard CGPreflightScreenCaptureAccess() else {
@@ -47,6 +51,11 @@ enum ScreenAndInput {
                                             [.bestResolution])
         guard let cgImage = image else {
             throw Err.captureFailed
+        }
+
+        let display = mainDisplayInfo()
+        if let display {
+            updateLastCaptureScale(pixelWidth: cgImage.width, pixelHeight: cgImage.height, display: display)
         }
 
         let finalImage: CGImage
@@ -64,14 +73,15 @@ enum ScreenAndInput {
             "h": finalImage.height,
             "ts": Int(Date().timeIntervalSince1970)
         ]
-        if let display = mainDisplayInfo() {
+        if let display {
+            let scale = effectiveScale(display: display)
             info["screen_w"] = Double(display.bounds.width)
             info["screen_h"] = Double(display.bounds.height)
             info["screen_x"] = Double(display.bounds.origin.x)
             info["screen_y"] = Double(display.bounds.origin.y)
-            info["screen_scale"] = Double(display.scale)
-            info["screen_pixel_w"] = display.pixelWidth
-            info["screen_pixel_h"] = display.pixelHeight
+            info["screen_scale"] = Double(scale)
+            info["screen_pixel_w"] = Int(round(Double(display.bounds.width) * scale))
+            info["screen_pixel_h"] = Int(round(Double(display.bounds.height) * scale))
         }
         return info
     }
@@ -104,7 +114,7 @@ enum ScreenAndInput {
 
     static func imageLocation(fromScreen point: CGPoint) -> CGPoint? {
         guard let display = mainDisplayInfo() else { return nil }
-        let scale = Double(display.scale)
+        let scale = effectiveScale(display: display)
         if scale <= 0 { return nil }
 
         let xPx = (Double(point.x) - Double(display.bounds.origin.x)) * scale
@@ -192,6 +202,44 @@ enum ScreenAndInput {
         return ctx.makeImage()
     }
 
+    private static func updateLastCaptureScale(pixelWidth: Int, pixelHeight: Int, display: DisplayInfo) {
+        let w = Double(display.bounds.width)
+        let h = Double(display.bounds.height)
+        guard w > 0, h > 0 else { return }
+
+        let sx = Double(pixelWidth) / w
+        let sy = Double(pixelHeight) / h
+        let scale = normalizedScale(sx, sy)
+        guard scale > 0.1, scale < 10 else { return }
+
+        lastCaptureScale = scale
+        lastCaptureBounds = display.bounds
+    }
+
+    private static func effectiveScale(display: DisplayInfo) -> Double {
+        if let lastScale = lastCaptureScale,
+           let lastBounds = lastCaptureBounds,
+           abs(lastBounds.width - display.bounds.width) < 0.5,
+           abs(lastBounds.height - display.bounds.height) < 0.5,
+           lastScale > 0.1, lastScale < 10 {
+            return lastScale
+        }
+
+        if let backing = NSScreen.main?.backingScaleFactor, backing > 0 {
+            return Double(backing)
+        }
+
+        return Double(display.scale)
+    }
+
+    private static func normalizedScale(_ sx: Double, _ sy: Double) -> Double {
+        guard sx.isFinite, sy.isFinite, sx > 0, sy > 0 else { return 0 }
+        if abs(sx - sy) <= 0.05 {
+            return (sx + sy) / 2.0
+        }
+        return 0
+    }
+
     private static func mainDisplayInfo() -> DisplayInfo? {
         let id = CGMainDisplayID()
         let bounds = CGDisplayBounds(id)
@@ -206,7 +254,7 @@ enum ScreenAndInput {
             return CGPoint(x: x, y: y)
         case .imagePixels:
             guard let display = mainDisplayInfo() else { return nil }
-            let scale = Double(display.scale)
+            let scale = effectiveScale(display: display)
             if scale <= 0 { return nil }
 
             let xPt = x / scale + Double(display.bounds.origin.x)

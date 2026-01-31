@@ -1,6 +1,6 @@
 import Foundation
 import ApplicationServices
-
+/Users/anemll/Desktop/Screen Recording 2026-01-05 at 1.27.37 PM.mov
 @MainActor
 final class HostViewModel: ObservableObject {
     @Published var serverRunning: Bool = false
