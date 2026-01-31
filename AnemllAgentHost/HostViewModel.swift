@@ -13,7 +13,7 @@ final class HostViewModel: ObservableObject {
     private var server: LocalHTTPServer?
     private let cursorOverlay = CursorOverlay()
 
-    @Published var showCursorOverlay: Bool = false {
+    @Published var showCursorOverlay: Bool = true {
         didSet {
             if showCursorOverlay {
                 cursorOverlay.start()
@@ -22,6 +22,13 @@ final class HostViewModel: ObservableObject {
                 cursorOverlay.stop()
                 lastStatus = "Cursor overlay disabled"
             }
+        }
+    }
+
+    init() {
+        if showCursorOverlay {
+            cursorOverlay.start()
+            lastStatus = "Cursor overlay enabled"
         }
     }
 

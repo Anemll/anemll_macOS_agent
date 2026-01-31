@@ -121,14 +121,21 @@ final class LocalHTTPServer {
 
         case ("GET", "/mouse"):
             if let pt = ScreenAndInput.mouseLocation() {
-                return .json(200, ["x": pt.x, "y": pt.y])
+                var payload: [String: Any] = ["x": Double(pt.x), "y": Double(pt.y), "space": "screen_points"]
+                if let imagePt = ScreenAndInput.imageLocation(fromScreen: pt) {
+                    payload["image_x"] = Double(imagePt.x)
+                    payload["image_y"] = Double(imagePt.y)
+                    payload["image_space"] = "image_pixels"
+                }
+                return .json(200, payload)
             } else {
                 return .json(500, ["error": "mouse_unavailable"])
             }
 
         case ("POST", "/screenshot"):
             do {
-                let info = try ScreenAndInput.takeScreenshot()
+                let includeCursor = (req.jsonBody?["cursor"] as? Bool) ?? true
+                let info = try ScreenAndInput.takeScreenshot(includeCursor: includeCursor)
                 return .json(200, info)
             } catch {
                 return .json(500, ["error": "screenshot_failed", "detail": "\(error)"])
@@ -141,7 +148,8 @@ final class LocalHTTPServer {
             else {
                 return .json(400, ["error": "bad_request", "detail": "expected {x,y}"])
             }
-            let ok = ScreenAndInput.click(x: x, y: y)
+            let space = ScreenAndInput.CoordinateSpace.parse(body["space"])
+            let ok = ScreenAndInput.click(x: x, y: y, space: space)
             return .json(ok ? 200 : 500, ["ok": ok])
 
         case ("POST", "/move"):
@@ -151,7 +159,8 @@ final class LocalHTTPServer {
             else {
                 return .json(400, ["error": "bad_request", "detail": "expected {x,y}"])
             }
-            let ok = ScreenAndInput.move(x: x, y: y)
+            let space = ScreenAndInput.CoordinateSpace.parse(body["space"])
+            let ok = ScreenAndInput.move(x: x, y: y, space: space)
             return .json(ok ? 200 : 500, ["ok": ok])
 
         case ("POST", "/type"):

@@ -5,9 +5,37 @@ import UniformTypeIdentifiers
 
 enum ScreenAndInput {
     enum Err: Error { case screenCaptureNotAllowed; case captureFailed; case writeFailed }
+    enum CoordinateSpace: String {
+        case screenPoints
+        case imagePixels
+
+        static func parse(_ raw: Any?) -> CoordinateSpace {
+            guard let s = raw as? String else { return .screenPoints }
+            switch s.lowercased() {
+            case "image", "image_px", "image-px", "image_pixels", "imagepixels", "screenshot":
+                return .imagePixels
+            case "screen", "screen_points", "screenpoints":
+                return .screenPoints
+            default:
+                return .screenPoints
+            }
+        }
+    }
+
+    private struct DisplayInfo {
+        let id: CGDirectDisplayID
+        let bounds: CGRect
+        let pixelWidth: Int
+        let pixelHeight: Int
+
+        var scale: CGFloat {
+            guard bounds.width > 0 else { return 1 }
+            return CGFloat(pixelWidth) / bounds.width
+        }
+    }
 
     // Writes /tmp/anemll_last.png and returns info JSON
-    static func takeScreenshot(path: String = "/tmp/anemll_last.png") throws -> [String: Any] {
+    static func takeScreenshot(path: String = "/tmp/anemll_last.png", includeCursor: Bool = true) throws -> [String: Any] {
         guard CGPreflightScreenCaptureAccess() else {
             throw Err.screenCaptureNotAllowed
         }
@@ -21,18 +49,35 @@ enum ScreenAndInput {
             throw Err.captureFailed
         }
 
-        try writePNG(cgImage: cgImage, to: URL(fileURLWithPath: path))
-        return [
+        let finalImage: CGImage
+        if includeCursor, let withCursor = drawCursorOverlay(on: cgImage) {
+            finalImage = withCursor
+        } else {
+            finalImage = cgImage
+        }
+
+        try writePNG(cgImage: finalImage, to: URL(fileURLWithPath: path))
+        var info: [String: Any] = [
             "ok": true,
             "path": path,
-            "w": cgImage.width,
-            "h": cgImage.height,
+            "w": finalImage.width,
+            "h": finalImage.height,
             "ts": Int(Date().timeIntervalSince1970)
         ]
+        if let display = mainDisplayInfo() {
+            info["screen_w"] = Double(display.bounds.width)
+            info["screen_h"] = Double(display.bounds.height)
+            info["screen_x"] = Double(display.bounds.origin.x)
+            info["screen_y"] = Double(display.bounds.origin.y)
+            info["screen_scale"] = Double(display.scale)
+            info["screen_pixel_w"] = display.pixelWidth
+            info["screen_pixel_h"] = display.pixelHeight
+        }
+        return info
     }
 
-    static func click(x: Double, y: Double) -> Bool {
-        let pt = CGPoint(x: x, y: y)
+    static func click(x: Double, y: Double, space: CoordinateSpace = .screenPoints) -> Bool {
+        guard let pt = screenPoint(x: x, y: y, space: space) else { return false }
 
         guard let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: pt, mouseButton: .left),
               let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: pt, mouseButton: .left)
@@ -44,8 +89,8 @@ enum ScreenAndInput {
         return true
     }
 
-    static func move(x: Double, y: Double) -> Bool {
-        let pt = CGPoint(x: x, y: y)
+    static func move(x: Double, y: Double, space: CoordinateSpace = .screenPoints) -> Bool {
+        guard let pt = screenPoint(x: x, y: y, space: space) else { return false }
         guard let move = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: pt, mouseButton: .left) else {
             return false
         }
@@ -55,6 +100,16 @@ enum ScreenAndInput {
 
     static func mouseLocation() -> CGPoint? {
         return CGEvent(source: nil)?.location
+    }
+
+    static func imageLocation(fromScreen point: CGPoint) -> CGPoint? {
+        guard let display = mainDisplayInfo() else { return nil }
+        let scale = Double(display.scale)
+        if scale <= 0 { return nil }
+
+        let xPx = (Double(point.x) - Double(display.bounds.origin.x)) * scale
+        let yPx = (Double(display.bounds.height) - (Double(point.y) - Double(display.bounds.origin.y))) * scale
+        return CGPoint(x: xPx, y: yPx)
     }
 
     static func type(text: String) -> Bool {
@@ -97,6 +152,66 @@ enum ScreenAndInput {
         CGImageDestinationAddImage(dest, cgImage, nil)
         if !CGImageDestinationFinalize(dest) {
             throw Err.writeFailed
+        }
+    }
+
+    private static func drawCursorOverlay(on cgImage: CGImage) -> CGImage? {
+        let width = cgImage.width
+        let height = cgImage.height
+        let colorSpace = cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let ctx = CGContext(data: nil,
+                                  width: width,
+                                  height: height,
+                                  bitsPerComponent: 8,
+                                  bytesPerRow: 0,
+                                  space: colorSpace,
+                                  bitmapInfo: bitmapInfo)
+        else { return nil }
+
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        guard let mousePt = mouseLocation(),
+              let imgPt = imageLocation(fromScreen: mousePt)
+        else { return ctx.makeImage() }
+
+        let x = CGFloat(imgPt.x)
+        let y = CGFloat(imgPt.y)
+        let yFlip = CGFloat(height) - y
+
+        let radius: CGFloat = 12
+        let strokeWidth: CGFloat = 3
+        ctx.setStrokeColor(CGColor(red: 1.0, green: 0.2, blue: 0.2, alpha: 0.9))
+        ctx.setLineWidth(strokeWidth)
+        ctx.strokeEllipse(in: CGRect(x: x - radius, y: yFlip - radius, width: radius * 2, height: radius * 2))
+
+        // Small center dot for visibility
+        ctx.setFillColor(CGColor(red: 1.0, green: 0.2, blue: 0.2, alpha: 0.9))
+        ctx.fillEllipse(in: CGRect(x: x - 2, y: yFlip - 2, width: 4, height: 4))
+
+        return ctx.makeImage()
+    }
+
+    private static func mainDisplayInfo() -> DisplayInfo? {
+        let id = CGMainDisplayID()
+        let bounds = CGDisplayBounds(id)
+        let pixelWidth = Int(CGDisplayPixelsWide(id))
+        let pixelHeight = Int(CGDisplayPixelsHigh(id))
+        return DisplayInfo(id: id, bounds: bounds, pixelWidth: pixelWidth, pixelHeight: pixelHeight)
+    }
+
+    private static func screenPoint(x: Double, y: Double, space: CoordinateSpace) -> CGPoint? {
+        switch space {
+        case .screenPoints:
+            return CGPoint(x: x, y: y)
+        case .imagePixels:
+            guard let display = mainDisplayInfo() else { return nil }
+            let scale = Double(display.scale)
+            if scale <= 0 { return nil }
+
+            let xPt = x / scale + Double(display.bounds.origin.x)
+            let yPt = (Double(display.bounds.height) - (y / scale)) + Double(display.bounds.origin.y)
+            return CGPoint(x: xPt, y: yPt)
         }
     }
 }
