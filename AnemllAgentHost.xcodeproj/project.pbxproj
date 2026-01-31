@@ -1,0 +1,312 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 63;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		247598DA69F0CBEF967008C0 /* ScreenAndInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03A6E13B3FCD4ADE418E6088 /* ScreenAndInput.swift */; };
+		4603C48762705FBCD65566D3 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55C4F05153B97E1E2788549E /* ContentView.swift */; };
+		710BCE35BB5B0BA1BD2662AD /* AnemllAgentHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F2E2556D4C1CC6FA955D3BD /* AnemllAgentHostApp.swift */; };
+		92809023BC55F38E192519B1 /* LocalHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C6E5868F35D8DEBAEDC878 /* LocalHTTPServer.swift */; };
+		C4FB9F7DBE7AC3437CDE8D23 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40BE2C844E335C663384FD7E /* AppDelegate.swift */; };
+		D3A2B527F8683E8642728ABC /* HostViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC717FE689D299D9C26335A /* HostViewModel.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		03A6E13B3FCD4ADE418E6088 /* ScreenAndInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenAndInput.swift; sourceTree = "<group>"; };
+		1BC717FE689D299D9C26335A /* HostViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostViewModel.swift; sourceTree = "<group>"; };
+		40BE2C844E335C663384FD7E /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		55C4F05153B97E1E2788549E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		6AE27F3CF6A4D351999C3BFF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		7F2E2556D4C1CC6FA955D3BD /* AnemllAgentHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnemllAgentHostApp.swift; sourceTree = "<group>"; };
+		E10DB755905C0F7BA9EA1094 /* AnemllAgentHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AnemllAgentHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F5C6E5868F35D8DEBAEDC878 /* LocalHTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHTTPServer.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		1212EBCC7B94927D2655B3FB /* AnemllAgentHost */ = {
+			isa = PBXGroup;
+			children = (
+				7F2E2556D4C1CC6FA955D3BD /* AnemllAgentHostApp.swift */,
+				40BE2C844E335C663384FD7E /* AppDelegate.swift */,
+				55C4F05153B97E1E2788549E /* ContentView.swift */,
+				1BC717FE689D299D9C26335A /* HostViewModel.swift */,
+				6AE27F3CF6A4D351999C3BFF /* Info.plist */,
+				F5C6E5868F35D8DEBAEDC878 /* LocalHTTPServer.swift */,
+				03A6E13B3FCD4ADE418E6088 /* ScreenAndInput.swift */,
+			);
+			path = AnemllAgentHost;
+			sourceTree = "<group>";
+		};
+		148420374646EA42994D0BB5 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E10DB755905C0F7BA9EA1094 /* AnemllAgentHost.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		294C2462670EBFDCBFCB6206 = {
+			isa = PBXGroup;
+			children = (
+				1212EBCC7B94927D2655B3FB /* AnemllAgentHost */,
+				148420374646EA42994D0BB5 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D4C617911D42A1840808364C /* AnemllAgentHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3E0FF5DBAD2B7D58D569B444 /* Build configuration list for PBXNativeTarget "AnemllAgentHost" */;
+			buildPhases = (
+				4AE859478B2D0ADBB8AC946A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AnemllAgentHost;
+			packageProductDependencies = (
+			);
+			productName = AnemllAgentHost;
+			productReference = E10DB755905C0F7BA9EA1094 /* AnemllAgentHost.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D33573C7FCEC5618F2D7662B /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					D4C617911D42A1840808364C = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = DBCF4D47F3FD58E2B4983AE7 /* Build configuration list for PBXProject "AnemllAgentHost" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 294C2462670EBFDCBFCB6206;
+			minimizedProjectReferenceProxies = 1;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D4C617911D42A1840808364C /* AnemllAgentHost */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4AE859478B2D0ADBB8AC946A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				710BCE35BB5B0BA1BD2662AD /* AnemllAgentHostApp.swift in Sources */,
+				C4FB9F7DBE7AC3437CDE8D23 /* AppDelegate.swift in Sources */,
+				4603C48762705FBCD65566D3 /* ContentView.swift in Sources */,
+				D3A2B527F8683E8642728ABC /* HostViewModel.swift in Sources */,
+				92809023BC55F38E192519B1 /* LocalHTTPServer.swift in Sources */,
+				247598DA69F0CBEF967008C0 /* ScreenAndInput.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1592C696B5EA83BA48B07D79 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = ARRY5366Y3;
+				INFOPLIST_FILE = AnemllAgentHost/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.anemll.AnemllAgentHost;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		2F050CB7CDC7B77CAA4BAAC5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_FILE = AnemllAgentHost/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = AnemllAgentHost;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		BC4B492224C53DE1251028F9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_FILE = AnemllAgentHost/Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = AnemllAgentHost;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		C31B8453A3330DEF4D7FADD8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = ARRY5366Y3;
+				INFOPLIST_FILE = AnemllAgentHost/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.anemll.AnemllAgentHost;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3E0FF5DBAD2B7D58D569B444 /* Build configuration list for PBXNativeTarget "AnemllAgentHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1592C696B5EA83BA48B07D79 /* Debug */,
+				C31B8453A3330DEF4D7FADD8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		DBCF4D47F3FD58E2B4983AE7 /* Build configuration list for PBXProject "AnemllAgentHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2F050CB7CDC7B77CAA4BAAC5 /* Debug */,
+				BC4B492224C53DE1251028F9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = D33573C7FCEC5618F2D7662B /* Project object */;
+}
