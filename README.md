@@ -28,6 +28,33 @@ Important: The HTTP server is localhost only. Commands must run on the same Mac 
 
 Optional: Turn on "Show Cursor Overlay" in the menu app UI to draw a small red ring at the current cursor location. This makes the cursor visible in screenshots for alignment/debugging.
 
+### Claude Code permissions (avoid repeated bash prompts)
+If Claude Code keeps asking "Allow this bash command?", add a tight allowlist for the harness commands in `.claude/settings.local.json`. This keeps prompts limited to only the UI-automation calls.
+
+Minimal allowlist (paste under `permissions.allow`):
+
+```json
+[
+  "Bash(export ANEMLL_HOST=*:*)",
+  "Bash(export ANEMLL_TOKEN=*:*)",
+  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" \"$ANEMLL_HOST/health\")",
+  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" -X POST \"$ANEMLL_HOST/screenshot\"*)",
+  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" -H \"Content-Type: application/json\" -X POST \"$ANEMLL_HOST/click\" -d * )",
+  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" -H \"Content-Type: application/json\" -X POST \"$ANEMLL_HOST/type\" -d * )",
+  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" -H \"Content-Type: application/json\" -X POST \"$ANEMLL_HOST/move\" -d * )",
+  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" \"$ANEMLL_HOST/mouse\")"
+]
+```
+
+If you prefer auto-allow when sandboxed, add this to your Claude settings and restart Claude Code:
+
+```json
+"sandbox": {
+  "enabled": true,
+  "autoAllowBashIfSandboxed": true
+}
+```
+
 ### Environment setup (one-time per shell)
 
 ```sh
