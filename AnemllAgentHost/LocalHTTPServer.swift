@@ -119,6 +119,13 @@ final class LocalHTTPServer {
         case ("GET", "/health"):
             return .json(200, ["ok": true])
 
+        case ("GET", "/mouse"):
+            if let pt = ScreenAndInput.mouseLocation() {
+                return .json(200, ["x": pt.x, "y": pt.y])
+            } else {
+                return .json(500, ["error": "mouse_unavailable"])
+            }
+
         case ("POST", "/screenshot"):
             do {
                 let info = try ScreenAndInput.takeScreenshot()
@@ -135,6 +142,16 @@ final class LocalHTTPServer {
                 return .json(400, ["error": "bad_request", "detail": "expected {x,y}"])
             }
             let ok = ScreenAndInput.click(x: x, y: y)
+            return .json(ok ? 200 : 500, ["ok": ok])
+
+        case ("POST", "/move"):
+            guard let body = req.jsonBody,
+                  let x = body["x"] as? Double,
+                  let y = body["y"] as? Double
+            else {
+                return .json(400, ["error": "bad_request", "detail": "expected {x,y}"])
+            }
+            let ok = ScreenAndInput.move(x: x, y: y)
             return .json(ok ? 200 : 500, ["ok": ok])
 
         case ("POST", "/type"):

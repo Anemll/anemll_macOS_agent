@@ -15,6 +15,8 @@ This repo contains a minimal macOS menu bar app (AnemllAgentHost) that exposes a
 
 Important: The HTTP server is localhost only. Commands must run on the same Mac that is running AnemllAgentHost. If Claude is on another machine, SSH into the target Mac and run curl there.
 
+Optional: Turn on "Show Cursor Overlay" in the menu app UI to draw a small red ring at the current cursor location. This makes the cursor visible in screenshots for alignment/debugging.
+
 ### Environment setup (one-time per shell)
 
 ```sh
@@ -87,6 +89,24 @@ curl -s \
   -H "Content-Type: application/json" \
   -X POST "$ANEMLL_HOST/type" \
   -d '{"text":"Hello from Claude Code"}'
+```
+
+### 5) Move mouse to coordinates (x,y)
+
+```sh
+curl -s \
+  -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/move" \
+  -d '{"x":960,"y":540}'
+```
+
+### 6) Read current mouse position
+
+```sh
+curl -s \
+  -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  "$ANEMLL_HOST/mouse"
 ```
 
 ### Suggested automation loop (Claude should follow this pattern)

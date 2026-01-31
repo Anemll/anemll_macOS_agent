@@ -11,6 +11,19 @@ final class HostViewModel: ObservableObject {
     @Published var accessibilityAllowed: Bool = false
 
     private var server: LocalHTTPServer?
+    private let cursorOverlay = CursorOverlay()
+
+    @Published var showCursorOverlay: Bool = false {
+        didSet {
+            if showCursorOverlay {
+                cursorOverlay.start()
+                lastStatus = "Cursor overlay enabled"
+            } else {
+                cursorOverlay.stop()
+                lastStatus = "Cursor overlay disabled"
+            }
+        }
+    }
 
     func rotateToken() {
         token = UUID().uuidString

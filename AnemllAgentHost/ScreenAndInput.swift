@@ -44,6 +44,19 @@ enum ScreenAndInput {
         return true
     }
 
+    static func move(x: Double, y: Double) -> Bool {
+        let pt = CGPoint(x: x, y: y)
+        guard let move = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: pt, mouseButton: .left) else {
+            return false
+        }
+        move.post(tap: .cghidEventTap)
+        return true
+    }
+
+    static func mouseLocation() -> CGPoint? {
+        return CGEvent(source: nil)?.location
+    }
+
     static func type(text: String) -> Bool {
         // Type by Unicode injection
         for scalar in text.unicodeScalars {

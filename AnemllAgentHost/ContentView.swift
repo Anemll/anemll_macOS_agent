@@ -48,6 +48,10 @@ struct ContentView: View {
             }
             .font(.subheadline)
 
+            Toggle("Show Cursor Overlay", isOn: $vm.showCursorOverlay)
+                .toggleStyle(.switch)
+                .font(.subheadline)
+
             HStack {
                 Button("Reset Permissions") {
                     vm.resetPermissions()
