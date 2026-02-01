@@ -5,12 +5,19 @@ import ApplicationServices
 struct ContentView: View {
     @EnvironmentObject var vm: HostViewModel
 
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
 
             HStack {
                 Text("Anemll Agent Host")
                     .font(.headline)
+                Text("v\(appVersion)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Spacer()
                 Circle()
                     .fill(vm.serverRunning ? .green : .red)
@@ -81,9 +88,22 @@ struct ContentView: View {
                     Spacer()
                 }
 
-                Text("Bearer Token:")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack {
+                    Text("Bearer Token:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(action: {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(vm.token, forType: .string)
+                        vm.lastStatus = "Token copied to clipboard"
+                    }) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Copy token to clipboard")
+                }
 
                 Text(vm.token)
                     .font(.system(.caption, design: .monospaced))

@@ -5,7 +5,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 enum ScreenAndInput {
-    enum Err: Error { case screenCaptureNotAllowed; case captureFailed; case writeFailed }
+    enum Err: Error { case screenCaptureNotAllowed; case captureFailed; case writeFailed; case windowNotFound }
     enum CoordinateSpace: String {
         case screenPoints
         case imagePixels
@@ -261,5 +261,354 @@ enum ScreenAndInput {
             let yPt = (Double(display.bounds.height) - (y / scale)) + Double(display.bounds.origin.y)
             return CGPoint(x: xPt, y: yPt)
         }
+    }
+
+    // MARK: - Window listing and capture
+
+    /// Captures a specific window by ID, PID, app name, or title
+    /// Priority: windowID > pid > app > title (uses first match)
+    static func captureWindow(
+        windowID: CGWindowID? = nil,
+        pid: pid_t? = nil,
+        app: String? = nil,
+        title: String? = nil,
+        path: String = "/tmp/anemll_window.png"
+    ) throws -> [String: Any] {
+        guard CGPreflightScreenCaptureAccess() else {
+            throw Err.screenCaptureNotAllowed
+        }
+
+        // Find the target window
+        guard let targetWindowID = findWindowID(windowID: windowID, pid: pid, app: app, title: title) else {
+            throw Err.windowNotFound
+        }
+
+        // Capture the specific window
+        guard let cgImage = CGWindowListCreateImage(
+            .null,
+            .optionIncludingWindow,
+            targetWindowID,
+            [.bestResolution, .boundsIgnoreFraming]
+        ) else {
+            throw Err.captureFailed
+        }
+
+        try writePNG(cgImage: cgImage, to: URL(fileURLWithPath: path))
+
+        // Get window info for response
+        let windowInfo = getWindowInfo(windowID: targetWindowID)
+
+        var info: [String: Any] = [
+            "ok": true,
+            "path": path,
+            "w": cgImage.width,
+            "h": cgImage.height,
+            "window_id": Int(targetWindowID),
+            "ts": Int(Date().timeIntervalSince1970)
+        ]
+
+        if let app = windowInfo?["app"] {
+            info["app"] = app
+        }
+        if let title = windowInfo?["title"] {
+            info["title"] = title
+        }
+        if let pid = windowInfo?["pid"] {
+            info["pid"] = pid
+        }
+        if let bounds = windowInfo?["bounds"] {
+            info["bounds"] = bounds
+        }
+
+        return info
+    }
+
+    /// Moves the cursor to a position within a specific window
+    /// By default moves to the center of the window
+    /// offsetX/offsetY are relative to the window's top-left corner (in points)
+    /// If offsetX/offsetY are nil, cursor moves to center
+    static func moveCursorToWindow(
+        windowID: CGWindowID? = nil,
+        pid: pid_t? = nil,
+        app: String? = nil,
+        title: String? = nil,
+        offsetX: Double? = nil,
+        offsetY: Double? = nil
+    ) throws -> [String: Any] {
+        // Find the target window
+        guard let targetWindowID = findWindowID(windowID: windowID, pid: pid, app: app, title: title) else {
+            throw Err.windowNotFound
+        }
+
+        // Get window bounds
+        guard let windowInfo = getWindowInfo(windowID: targetWindowID),
+              let bounds = windowInfo["bounds"] as? [String: Double],
+              let winX = bounds["x"],
+              let winY = bounds["y"],
+              let winW = bounds["w"],
+              let winH = bounds["h"]
+        else {
+            throw Err.windowNotFound
+        }
+
+        // Calculate target position
+        let targetX: Double
+        let targetY: Double
+
+        if let offX = offsetX, let offY = offsetY {
+            // Use provided offset from window's top-left
+            targetX = winX + offX
+            targetY = winY + offY
+        } else {
+            // Default to center of window
+            targetX = winX + winW / 2.0
+            targetY = winY + winH / 2.0
+        }
+
+        // Move the cursor
+        guard let moveEvent = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: targetX, y: targetY), mouseButton: .left) else {
+            throw Err.captureFailed
+        }
+        moveEvent.post(tap: .cghidEventTap)
+
+        var info: [String: Any] = [
+            "ok": true,
+            "window_id": Int(targetWindowID),
+            "cursor_x": targetX,
+            "cursor_y": targetY
+        ]
+
+        if let app = windowInfo["app"] {
+            info["app"] = app
+        }
+        if let title = windowInfo["title"] {
+            info["title"] = title
+        }
+        if let pid = windowInfo["pid"] {
+            info["pid"] = pid
+        }
+        info["bounds"] = bounds
+
+        return info
+    }
+
+    /// Clicks at a position within a specific window
+    /// offsetX/offsetY are relative to the window's top-left corner (in points)
+    /// If offsetX/offsetY are nil, clicks at center of window
+    static func clickInWindow(
+        windowID: CGWindowID? = nil,
+        pid: pid_t? = nil,
+        app: String? = nil,
+        title: String? = nil,
+        offsetX: Double? = nil,
+        offsetY: Double? = nil
+    ) throws -> [String: Any] {
+        // Find the target window
+        guard let targetWindowID = findWindowID(windowID: windowID, pid: pid, app: app, title: title) else {
+            throw Err.windowNotFound
+        }
+
+        // Get window bounds
+        guard let windowInfo = getWindowInfo(windowID: targetWindowID),
+              let bounds = windowInfo["bounds"] as? [String: Double],
+              let winX = bounds["x"],
+              let winY = bounds["y"],
+              let winW = bounds["w"],
+              let winH = bounds["h"]
+        else {
+            throw Err.windowNotFound
+        }
+
+        // Calculate target position
+        let targetX: Double
+        let targetY: Double
+
+        if let offX = offsetX, let offY = offsetY {
+            // Use provided offset from window's top-left
+            targetX = winX + offX
+            targetY = winY + offY
+        } else {
+            // Default to center of window
+            targetX = winX + winW / 2.0
+            targetY = winY + winH / 2.0
+        }
+
+        let pt = CGPoint(x: targetX, y: targetY)
+
+        // Perform click
+        guard let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: pt, mouseButton: .left),
+              let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: pt, mouseButton: .left)
+        else {
+            throw Err.captureFailed
+        }
+
+        down.post(tap: .cghidEventTap)
+        usleep(10_000)
+        up.post(tap: .cghidEventTap)
+
+        var info: [String: Any] = [
+            "ok": true,
+            "window_id": Int(targetWindowID),
+            "click_x": targetX,
+            "click_y": targetY
+        ]
+
+        if let app = windowInfo["app"] {
+            info["app"] = app
+        }
+        if let title = windowInfo["title"] {
+            info["title"] = title
+        }
+        if let pid = windowInfo["pid"] {
+            info["pid"] = pid
+        }
+        info["bounds"] = bounds
+
+        return info
+    }
+
+    /// Find a window ID based on various criteria
+    private static func findWindowID(
+        windowID: CGWindowID?,
+        pid: pid_t?,
+        app: String?,
+        title: String?
+    ) -> CGWindowID? {
+        // If windowID is provided directly, verify it exists and return it
+        if let windowID = windowID {
+            let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+            let exists = windows.contains { ($0[kCGWindowNumber as String] as? Int) == Int(windowID) }
+            return exists ? windowID : nil
+        }
+
+        // Otherwise search through windows
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+
+        for window in windows {
+            guard let winID = window[kCGWindowNumber as String] as? Int else { continue }
+
+            // Match by PID
+            if let targetPID = pid {
+                if let winPID = window[kCGWindowOwnerPID as String] as? Int, winPID == Int(targetPID) {
+                    // If app or title also specified, they must match too
+                    if let targetApp = app {
+                        guard let winApp = window[kCGWindowOwnerName as String] as? String,
+                              winApp.localizedCaseInsensitiveContains(targetApp) else { continue }
+                    }
+                    if let targetTitle = title {
+                        guard let winTitle = window[kCGWindowName as String] as? String,
+                              winTitle.localizedCaseInsensitiveContains(targetTitle) else { continue }
+                    }
+                    return CGWindowID(winID)
+                }
+                continue
+            }
+
+            // Match by app name
+            if let targetApp = app {
+                guard let winApp = window[kCGWindowOwnerName as String] as? String,
+                      winApp.localizedCaseInsensitiveContains(targetApp) else { continue }
+                // If title also specified, it must match too
+                if let targetTitle = title {
+                    guard let winTitle = window[kCGWindowName as String] as? String,
+                          winTitle.localizedCaseInsensitiveContains(targetTitle) else { continue }
+                }
+                return CGWindowID(winID)
+            }
+
+            // Match by title only
+            if let targetTitle = title {
+                guard let winTitle = window[kCGWindowName as String] as? String,
+                      winTitle.localizedCaseInsensitiveContains(targetTitle) else { continue }
+                return CGWindowID(winID)
+            }
+        }
+
+        return nil
+    }
+
+    /// Get info for a specific window by ID
+    private static func getWindowInfo(windowID: CGWindowID) -> [String: Any]? {
+        let windows = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
+
+        for window in windows {
+            guard let winID = window[kCGWindowNumber as String] as? Int, winID == Int(windowID) else { continue }
+
+            var info: [String: Any] = ["id": winID]
+
+            if let ownerName = window[kCGWindowOwnerName as String] as? String {
+                info["app"] = ownerName
+            }
+            if let ownerPID = window[kCGWindowOwnerPID as String] as? Int {
+                info["pid"] = ownerPID
+            }
+            if let windowName = window[kCGWindowName as String] as? String, !windowName.isEmpty {
+                info["title"] = windowName
+            }
+            if let bounds = window[kCGWindowBounds as String] as? [String: Any] {
+                if let x = bounds["X"] as? Double,
+                   let y = bounds["Y"] as? Double,
+                   let w = bounds["Width"] as? Double,
+                   let h = bounds["Height"] as? Double {
+                    info["bounds"] = ["x": x, "y": y, "w": w, "h": h]
+                }
+            }
+
+            return info
+        }
+
+        return nil
+    }
+
+    static func listWindows(onScreenOnly: Bool = true) -> [[String: Any]] {
+        let options: CGWindowListOption = onScreenOnly
+            ? [.optionOnScreenOnly, .excludeDesktopElements]
+            : [.optionAll]
+
+        guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+
+        var results: [[String: Any]] = []
+        for window in windowList {
+            var info: [String: Any] = [:]
+
+            if let windowID = window[kCGWindowNumber as String] as? Int {
+                info["id"] = windowID
+            }
+            if let ownerName = window[kCGWindowOwnerName as String] as? String {
+                info["app"] = ownerName
+            }
+            if let ownerPID = window[kCGWindowOwnerPID as String] as? Int {
+                info["pid"] = ownerPID
+            }
+            if let windowName = window[kCGWindowName as String] as? String, !windowName.isEmpty {
+                info["title"] = windowName
+            }
+            if let layer = window[kCGWindowLayer as String] as? Int {
+                info["layer"] = layer
+            }
+            if let alpha = window[kCGWindowAlpha as String] as? Double {
+                info["alpha"] = alpha
+            }
+            if let bounds = window[kCGWindowBounds as String] as? [String: Any] {
+                if let x = bounds["X"] as? Double,
+                   let y = bounds["Y"] as? Double,
+                   let w = bounds["Width"] as? Double,
+                   let h = bounds["Height"] as? Double {
+                    info["bounds"] = ["x": x, "y": y, "w": w, "h": h]
+                }
+            }
+            if let isOnScreen = window[kCGWindowIsOnscreen as String] as? Bool {
+                info["on_screen"] = isOnScreen
+            }
+
+            // Only include windows with bounds (skip system UI elements without size)
+            if info["bounds"] != nil {
+                results.append(info)
+            }
+        }
+
+        return results
     }
 }

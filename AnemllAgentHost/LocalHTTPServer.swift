@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import CoreGraphics
 
 final class LocalHTTPServer {
     enum ServerError: Error { case startFailed(String) }
@@ -115,9 +116,10 @@ final class LocalHTTPServer {
             return .json(401, ["error": "unauthorized"])
         }
 
-        switch (req.method, req.path) {
+        switch (req.method, req.pathOnly) {
         case ("GET", "/health"):
-            return .json(200, ["ok": true])
+            let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+            return .json(200, ["ok": true, "version": version])
 
         case ("GET", "/mouse"):
             if let pt = ScreenAndInput.mouseLocation() {
@@ -172,6 +174,106 @@ final class LocalHTTPServer {
             let ok = ScreenAndInput.type(text: text)
             return .json(ok ? 200 : 500, ["ok": ok])
 
+        case ("GET", "/windows"):
+            let onScreenOnly = req.queryParam("on_screen") != "false"
+            let windows = ScreenAndInput.listWindows(onScreenOnly: onScreenOnly)
+            return .json(200, ["ok": true, "count": windows.count, "windows": windows])
+
+        case ("POST", "/capture"):
+            let body = req.jsonBody ?? [:]
+
+            // At least one identifier must be provided
+            let windowID = (body["window_id"] as? Int).map { CGWindowID($0) }
+            let pid = (body["pid"] as? Int).map { pid_t($0) }
+            let app = body["app"] as? String
+            let title = body["title"] as? String
+
+            if windowID == nil && pid == nil && app == nil && title == nil {
+                return .json(400, ["error": "bad_request", "detail": "expected at least one of: window_id, pid, app, title"])
+            }
+
+            do {
+                let info = try ScreenAndInput.captureWindow(
+                    windowID: windowID,
+                    pid: pid,
+                    app: app,
+                    title: title
+                )
+                return .json(200, info)
+            } catch ScreenAndInput.Err.windowNotFound {
+                return .json(404, ["error": "window_not_found", "detail": "No matching window found"])
+            } catch ScreenAndInput.Err.screenCaptureNotAllowed {
+                return .json(403, ["error": "screen_capture_not_allowed", "detail": "Screen Recording permission required"])
+            } catch {
+                return .json(500, ["error": "capture_failed", "detail": "\(error)"])
+            }
+
+        case ("POST", "/focus"):
+            let body = req.jsonBody ?? [:]
+
+            // At least one identifier must be provided
+            let windowID = (body["window_id"] as? Int).map { CGWindowID($0) }
+            let pid = (body["pid"] as? Int).map { pid_t($0) }
+            let app = body["app"] as? String
+            let title = body["title"] as? String
+
+            if windowID == nil && pid == nil && app == nil && title == nil {
+                return .json(400, ["error": "bad_request", "detail": "expected at least one of: window_id, pid, app, title"])
+            }
+
+            // Optional offset within window (default: center)
+            let offsetX = body["offset_x"] as? Double
+            let offsetY = body["offset_y"] as? Double
+
+            do {
+                let info = try ScreenAndInput.moveCursorToWindow(
+                    windowID: windowID,
+                    pid: pid,
+                    app: app,
+                    title: title,
+                    offsetX: offsetX,
+                    offsetY: offsetY
+                )
+                return .json(200, info)
+            } catch ScreenAndInput.Err.windowNotFound {
+                return .json(404, ["error": "window_not_found", "detail": "No matching window found"])
+            } catch {
+                return .json(500, ["error": "focus_failed", "detail": "\(error)"])
+            }
+
+        case ("POST", "/click_window"):
+            let body = req.jsonBody ?? [:]
+
+            // At least one identifier must be provided
+            let windowID = (body["window_id"] as? Int).map { CGWindowID($0) }
+            let pid = (body["pid"] as? Int).map { pid_t($0) }
+            let app = body["app"] as? String
+            let title = body["title"] as? String
+
+            if windowID == nil && pid == nil && app == nil && title == nil {
+                return .json(400, ["error": "bad_request", "detail": "expected at least one of: window_id, pid, app, title"])
+            }
+
+            // Optional offset within window (default: center)
+            let offsetX = body["offset_x"] as? Double
+            let offsetY = body["offset_y"] as? Double
+
+            do {
+                let info = try ScreenAndInput.clickInWindow(
+                    windowID: windowID,
+                    pid: pid,
+                    app: app,
+                    title: title,
+                    offsetX: offsetX,
+                    offsetY: offsetY
+                )
+                return .json(200, info)
+            } catch ScreenAndInput.Err.windowNotFound {
+                return .json(404, ["error": "window_not_found", "detail": "No matching window found"])
+            } catch {
+                return .json(500, ["error": "click_window_failed", "detail": "\(error)"])
+            }
+
         default:
             return .json(404, ["error": "not_found"])
         }
@@ -192,6 +294,28 @@ struct HTTPRequest {
     }
 
     var isLocalhost: Bool { true } // we already enforce endpoint check
+
+    /// Returns just the path component without query string
+    var pathOnly: String {
+        if let idx = path.firstIndex(of: "?") {
+            return String(path[..<idx])
+        }
+        return path
+    }
+
+    /// Returns value for a query parameter, or nil if not present
+    func queryParam(_ key: String) -> String? {
+        guard let idx = path.firstIndex(of: "?") else { return nil }
+        let queryString = String(path[path.index(after: idx)...])
+        let pairs = queryString.split(separator: "&")
+        for pair in pairs {
+            let kv = pair.split(separator: "=", maxSplits: 1)
+            if kv.count >= 1, String(kv[0]) == key {
+                return kv.count >= 2 ? String(kv[1]).removingPercentEncoding ?? String(kv[1]) : ""
+            }
+        }
+        return nil
+    }
 
     static func parse(data: Data) -> HTTPRequest {
         let s = String(data: data, encoding: .utf8) ?? ""
