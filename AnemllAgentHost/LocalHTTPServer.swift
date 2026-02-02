@@ -100,18 +100,23 @@ final class LocalHTTPServer {
 
         onLog?("Request \(req.method) \(req.path)")
 
-        // Auth
-        guard let auth = req.headers["authorization"] else {
-            onLog?("Unauthorized request (missing auth)")
-            return .json(401, ["error": "unauthorized"])
+        // Auth - check header first, then URL query param (for browser access to debug endpoints)
+        var authenticated = false
+
+        if let auth = req.headers["authorization"] {
+            let parts = auth.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+            if parts.count == 2, parts[0].lowercased() == "bearer" {
+                let token = String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+                authenticated = (token == bearerToken)
+            }
         }
-        let parts = auth.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
-        guard parts.count == 2, parts[0].lowercased() == "bearer" else {
-            onLog?("Unauthorized request (bad scheme)")
-            return .json(401, ["error": "unauthorized"])
+
+        // Allow token via URL query param for browser access (e.g., /debug?token=xxx)
+        if !authenticated, let urlToken = req.queryParam("token") {
+            authenticated = (urlToken == bearerToken)
         }
-        let token = String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard token == bearerToken else {
+
+        guard authenticated else {
             onLog?("Unauthorized request")
             return .json(401, ["error": "unauthorized"])
         }
@@ -189,6 +194,10 @@ final class LocalHTTPServer {
             let title = body["title"] as? String
             let includeCursor = (body["cursor"] as? Bool) ?? true
 
+            // New options for v0.1.4
+            let returnBase64 = (body["return_base64"] as? Bool) ?? false
+            let runOCR = (body["ocr"] as? Bool) ?? false
+
             // max_dimension: 0 = no resizing, "playwright" = 1120, "safe" = 2000, "max" = 8000, or specific int
             // "playwright" matches Playwright MCP's 1.15MP target - most reliable for Claude Code
             let maxDimension: Int
@@ -233,7 +242,9 @@ final class LocalHTTPServer {
                     title: title,
                     includeCursor: includeCursor,
                     maxDimension: maxDimension,
-                    resizeMode: resizeMode
+                    resizeMode: resizeMode,
+                    returnBase64: returnBase64,
+                    runOCR: runOCR
                 )
                 return .json(200, info)
             } catch ScreenAndInput.Err.windowNotFound {
@@ -373,6 +384,129 @@ final class LocalHTTPServer {
                 return .json(500, ["error": "burst_failed", "detail": "\(error)"])
             }
 
+        case ("GET", "/debug"):
+            // Debug viewer - serves HTML page that shows latest capture with auto-refresh
+            // Access via: http://127.0.0.1:8765/debug?token=YOUR_TOKEN (browser-friendly)
+            // For SSH tunnel: ssh -L 8765:localhost:8765 user@mac
+            let urlToken = req.queryParam("token") ?? ""
+            let tokenParam = urlToken.isEmpty ? "" : "&token=\(urlToken)"
+            let refreshUrl = urlToken.isEmpty ? "/debug" : "/debug?token=\(urlToken)"
+            let html = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>AnemllAgentHost Debug Viewer</title>
+                <meta http-equiv="refresh" content="2;url=\(refreshUrl)">
+                <style>
+                    body { font-family: -apple-system, sans-serif; margin: 20px; background: #1a1a1a; color: #fff; }
+                    h1 { margin: 0 0 10px 0; }
+                    .info { font-size: 12px; color: #888; margin-bottom: 10px; }
+                    .container { display: flex; gap: 20px; }
+                    .image-box { flex: 1; }
+                    .ocr-box { width: 300px; max-height: 600px; overflow-y: auto; }
+                    img { max-width: 100%; border: 1px solid #333; }
+                    .ocr-item { padding: 5px; border-bottom: 1px solid #333; font-size: 11px; }
+                    .ocr-text { font-weight: bold; }
+                    .ocr-coords { color: #666; }
+                    .no-image { padding: 40px; text-align: center; color: #666; border: 1px dashed #333; }
+                </style>
+            </head>
+            <body>
+                <h1>AnemllAgentHost Debug</h1>
+                <div class="info">Auto-refreshes every 2 seconds. Last window capture shown.</div>
+                <div class="container">
+                    <div class="image-box">
+                        <img id="capture" src="/debug/image?t=\(Int(Date().timeIntervalSince1970))\(tokenParam)"
+                             onerror="this.style.display='none';document.getElementById('no-img').style.display='block';">
+                        <div id="no-img" class="no-image" style="display:none;">No capture available.<br>Run /capture to see image here.</div>
+                    </div>
+                </div>
+                <script>
+                    // Prevent cache issues
+                    document.getElementById('capture').src = '/debug/image?t=' + Date.now() + '\(tokenParam)';
+                </script>
+            </body>
+            </html>
+            """
+            return .html(200, html)
+
+        case ("GET", "/debug/image"):
+            // Serve the last captured window image
+            let path = "/tmp/anemll_window.png"
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
+                return HTTPResponse(status: 200, headers: ["Content-Type": "image/png", "Cache-Control": "no-cache"], body: data)
+            } else {
+                // Return a 1x1 transparent PNG if no image exists
+                let emptyPNG = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")!
+                return HTTPResponse(status: 200, headers: ["Content-Type": "image/png"], body: emptyPNG)
+            }
+
+        case ("POST", "/calibrate"):
+            // Calibration endpoint: captures window, runs OCR, returns scale and offset info
+            // Agent can use this to measure actual vs expected positions
+            //
+            // Calibration procedure for agents:
+            // 1. POST /calibrate with window identifier (app, title, etc.)
+            // 2. Response includes: window bounds, image dimensions, scale factors
+            // 3. OCR results include both raw pixel coords AND click coords
+            // 4. Agent can click a known element and verify cursor position
+            // 5. If offset observed, agent stores calibration offset for future clicks
+            //
+            // For iPhone mirroring: capture the iPhone window, find a known UI element,
+            // click it, observe if click lands correctly, adjust offset if needed.
+
+            let body = req.jsonBody ?? [:]
+            let windowID = (body["window_id"] as? Int).map { CGWindowID($0) }
+            let pid = (body["pid"] as? Int).map { pid_t($0) }
+            let app = body["app"] as? String
+            let title = body["title"] as? String
+
+            if windowID == nil && pid == nil && app == nil && title == nil {
+                return .json(400, ["error": "bad_request", "detail": "expected at least one of: window_id, pid, app, title"])
+            }
+
+            do {
+                // Capture with OCR enabled
+                let captureInfo = try ScreenAndInput.captureWindow(
+                    windowID: windowID,
+                    pid: pid,
+                    app: app,
+                    title: title,
+                    includeCursor: true,
+                    maxDimension: 0,  // No resize for accurate calibration
+                    runOCR: true
+                )
+
+                var response: [String: Any] = [
+                    "ok": true,
+                    "calibration": [
+                        "image_w": captureInfo["w"] ?? 0,
+                        "image_h": captureInfo["h"] ?? 0,
+                        "ocr_scale": captureInfo["ocr_scale"] ?? 1.0,
+                        "instructions": [
+                            "1. OCR 'click_x' and 'click_y' are in window points, ready for /click_window offset_x/offset_y",
+                            "2. To verify: pick an OCR element, call /click_window with its click_x, click_y",
+                            "3. If click lands offset from target, measure the delta",
+                            "4. Apply delta correction to future click_x, click_y values",
+                            "5. For consistent results, keep window at same position/size"
+                        ]
+                    ]
+                ]
+
+                // Copy relevant fields from capture
+                for key in ["window_id", "app", "title", "pid", "bounds", "path", "ocr", "ocr_count"] {
+                    if let val = captureInfo[key] {
+                        response[key] = val
+                    }
+                }
+
+                return .json(200, response)
+            } catch ScreenAndInput.Err.windowNotFound {
+                return .json(404, ["error": "window_not_found"])
+            } catch {
+                return .json(500, ["error": "calibrate_failed", "detail": "\(error)"])
+            }
+
         default:
             return .json(404, ["error": "not_found"])
         }
@@ -500,6 +634,10 @@ struct HTTPResponse {
 
     static func text(_ status: Int, _ text: String) -> HTTPResponse {
         return HTTPResponse(status: status, headers: ["Content-Type": "text/plain; charset=utf-8"], body: Data(text.utf8))
+    }
+
+    static func html(_ status: Int, _ html: String) -> HTTPResponse {
+        return HTTPResponse(status: status, headers: ["Content-Type": "text/html; charset=utf-8"], body: Data(html.utf8))
     }
 }
 

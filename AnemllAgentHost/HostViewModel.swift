@@ -1,5 +1,6 @@
 import Foundation
 import ApplicationServices
+import Cocoa
 
 @MainActor
 final class HostViewModel: ObservableObject {
@@ -9,6 +10,16 @@ final class HostViewModel: ObservableObject {
 
     @Published var screenCaptureAllowed: Bool = false
     @Published var accessibilityAllowed: Bool = false
+
+    // Onboarding state
+    @Published var showOnboarding: Bool = false
+    @Published var onboardingStep: Int = 0
+
+    // Skill sync
+    @Published var skillNeedsSync: Bool = false
+    @Published var bundledSkillVersion: String = ""
+    @Published var installedSkillVersion: String = ""
+    @Published var installedCodexSkillVersion: String = ""
 
     private var server: LocalHTTPServer?
     private let cursorOverlay = CursorOverlay()
@@ -30,6 +41,79 @@ final class HostViewModel: ObservableObject {
             cursorOverlay.start()
             lastStatus = "Cursor overlay enabled"
         }
+        // Check permissions on startup (inline to avoid MainActor isolation issue in init)
+        screenCaptureAllowed = CGPreflightScreenCaptureAccess()
+        accessibilityAllowed = AXIsProcessTrusted()
+        // Check if onboarding needed
+        if !screenCaptureAllowed || !accessibilityAllowed {
+            showOnboarding = true
+            onboardingStep = screenCaptureAllowed ? 1 : 0
+        }
+        // Check skill sync
+        checkSkillSyncInternal()
+    }
+
+    /// Internal sync check for init (avoids MainActor re-entrancy)
+    private func checkSkillSyncInternal() {
+        // Get bundled skill version from app resources
+        if let bundledPath = Bundle.main.path(forResource: "SKILL", ofType: "md", inDirectory: "skills") {
+            bundledSkillVersion = getSkillVersion(at: bundledPath)
+        } else {
+            // Try alternate location
+            let altPath = Bundle.main.bundlePath + "/Contents/Resources/skills/SKILL.md"
+            if FileManager.default.fileExists(atPath: altPath) {
+                bundledSkillVersion = getSkillVersion(at: altPath)
+            }
+        }
+
+        // Get installed skill versions (Claude + Codex)
+        let claudePath = NSHomeDirectory() + "/.claude/skills/anemll-macos-agent/SKILL.md"
+        if FileManager.default.fileExists(atPath: claudePath) {
+            installedSkillVersion = getSkillVersion(at: claudePath)
+        } else {
+            installedSkillVersion = "Not installed"
+        }
+
+        let codexCustomPath = NSHomeDirectory() + "/.codex/skills/custom/anemll-macos-agent/SKILL.md"
+        let codexPath = NSHomeDirectory() + "/.codex/skills/anemll-macos-agent/SKILL.md"
+        if FileManager.default.fileExists(atPath: codexCustomPath) {
+            installedCodexSkillVersion = getSkillVersion(at: codexCustomPath)
+        } else if FileManager.default.fileExists(atPath: codexPath) {
+            installedCodexSkillVersion = getSkillVersion(at: codexPath)
+        } else {
+            installedCodexSkillVersion = "Not installed"
+        }
+
+        // Check if sync needed (versions differ or not installed)
+        let needsClaudeSync = installedSkillVersion != bundledSkillVersion
+        let needsCodexSync = installedCodexSkillVersion != bundledSkillVersion
+        skillNeedsSync = (needsClaudeSync || needsCodexSync) && !bundledSkillVersion.isEmpty
+    }
+
+    private func checkOnboardingNeeded() {
+        // Show onboarding if any permission is missing
+        if !screenCaptureAllowed || !accessibilityAllowed {
+            showOnboarding = true
+            onboardingStep = screenCaptureAllowed ? 1 : 0  // Start at first missing permission
+        }
+    }
+
+    func advanceOnboarding() {
+        refreshPermissions()
+        if onboardingStep == 0 && screenCaptureAllowed {
+            onboardingStep = 1
+        } else if onboardingStep == 1 && accessibilityAllowed {
+            onboardingStep = 2  // Complete
+            showOnboarding = false
+            // Auto-start server when permissions are granted
+            if !serverRunning {
+                startServer()
+            }
+        }
+    }
+
+    func skipOnboarding() {
+        showOnboarding = false
     }
 
     func rotateToken() {
@@ -128,6 +212,169 @@ final class HostViewModel: ObservableObject {
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             let msg = String(data: data, encoding: .utf8) ?? "tccutil failed"
             throw NSError(domain: "TCCReset", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: msg])
+        }
+    }
+
+    // MARK: - App Restart
+
+    func restartApp() {
+        lastStatus = "Restarting..."
+
+        // Get the path to the running app
+        guard let appPath = Bundle.main.bundlePath as String? else {
+            lastStatus = "Cannot find app path"
+            return
+        }
+
+        // Use /usr/bin/open to relaunch after a short delay
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 0.5 && open \"\(appPath)\""]
+
+        do {
+            try task.run()
+            // Terminate current instance
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                NSApp.terminate(nil)
+            }
+        } catch {
+            lastStatus = "Restart failed: \(error.localizedDescription)"
+        }
+    }
+
+    func resetAndRestart() {
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.anemll.AnemllAgentHost"
+        lastStatus = "Resetting permissions and restarting..."
+
+        Task.detached { [bundleID] in
+            let services = ["ScreenCapture", "Accessibility"]
+            for service in services {
+                try? Self.runTCCReset(service: service, bundleID: bundleID)
+            }
+
+            await MainActor.run {
+                self.restartApp()
+            }
+        }
+    }
+
+    // MARK: - Skill Sync
+
+    func checkSkillSync() {
+        checkSkillSyncInternal()
+    }
+
+    private func getSkillVersion(at path: String) -> String {
+        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return "unknown"
+        }
+        // Look for version in the skill file (e.g., "v0.1.4")
+        if let range = content.range(of: #"AnemllAgentHost v[\d.]+"#, options: .regularExpression) {
+            let match = String(content[range])
+            return match.replacingOccurrences(of: "AnemllAgentHost ", with: "")
+        }
+        // Fallback: use file modification date
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+           let modDate = attrs[.modificationDate] as? Date {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            return formatter.string(from: modDate)
+        }
+        return "unknown"
+    }
+
+    func syncSkill() {
+        // Copy bundled skill to user's Claude and Codex skills directories
+        let claudeDir = NSHomeDirectory() + "/.claude/skills/anemll-macos-agent"
+        let claudePath = claudeDir + "/SKILL.md"
+        let codexDir = NSHomeDirectory() + "/.codex/skills/custom/anemll-macos-agent"
+        let codexPath = codexDir + "/SKILL.md"
+
+        // Find bundled skill
+        var sourcePath: String?
+        if let path = Bundle.main.path(forResource: "SKILL", ofType: "md", inDirectory: "skills") {
+            sourcePath = path
+        } else {
+            let altPath = Bundle.main.bundlePath + "/Contents/Resources/skills/SKILL.md"
+            if FileManager.default.fileExists(atPath: altPath) {
+                sourcePath = altPath
+            }
+        }
+
+        guard let source = sourcePath else {
+            lastStatus = "Bundled skill not found"
+            return
+        }
+
+        do {
+            // Create directories if needed
+            try FileManager.default.createDirectory(atPath: claudeDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(atPath: codexDir, withIntermediateDirectories: true)
+
+            // Remove existing files
+            if FileManager.default.fileExists(atPath: claudePath) {
+                try FileManager.default.removeItem(atPath: claudePath)
+            }
+            if FileManager.default.fileExists(atPath: codexPath) {
+                try FileManager.default.removeItem(atPath: codexPath)
+            }
+
+            // Copy new file
+            try FileManager.default.copyItem(atPath: source, toPath: claudePath)
+            try FileManager.default.copyItem(atPath: source, toPath: codexPath)
+
+            lastStatus = "Skill synced to Claude + Codex"
+            checkSkillSync()  // Refresh status
+        } catch {
+            lastStatus = "Skill sync failed: \(error.localizedDescription)"
+        }
+    }
+
+    func openSystemSettingsPrivacy() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func openSystemSettingsScreenRecording() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func openSystemSettingsAccessibility() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    // MARK: - Update CLAUDE.md Token
+
+    func updateClaudeToken() {
+        let claudeMdPath = NSHomeDirectory() + "/.claude/CLAUDE.md"
+
+        guard FileManager.default.fileExists(atPath: claudeMdPath) else {
+            lastStatus = "CLAUDE.md not found"
+            return
+        }
+
+        do {
+            var content = try String(contentsOfFile: claudeMdPath, encoding: .utf8)
+
+            // Replace the token line using regex
+            // Matches: ANEMLL_TOKEN=<any-uuid-format>
+            let pattern = #"ANEMLL_TOKEN=[A-F0-9\-]+"#
+            let replacement = "ANEMLL_TOKEN=\(token)"
+
+            if let range = content.range(of: pattern, options: .regularExpression) {
+                content.replaceSubrange(range, with: replacement)
+                try content.write(toFile: claudeMdPath, atomically: true, encoding: .utf8)
+                lastStatus = "Token updated in CLAUDE.md"
+            } else {
+                lastStatus = "Token pattern not found in CLAUDE.md"
+            }
+        } catch {
+            lastStatus = "Failed to update CLAUDE.md: \(error.localizedDescription)"
         }
     }
 }

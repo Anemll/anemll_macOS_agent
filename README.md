@@ -4,23 +4,76 @@
 
 This repo contains a minimal macOS menu bar app (AnemllAgentHost) that exposes a localhost HTTP API for UI automation (screenshot, click, type). The instructions below are formatted for Claude Code/Codex to use the service via SSH + curl.
 
+## Base64-first Capture (Recommended)
+
+For fastest agent loops, request **inline base64 images** to avoid extra file reads:
+
+```bash
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/capture" \
+  -d '{"title":"iPhone Mirroring","return_base64":true,"max_dimension":"playwright"}'
+```
+
 ## Overview tips
 - Use the lowest macOS screen resolution (1344x756) to reduce coordinate drift.
 - If testing iPhone UI, use iPhone screen sharing and keep the mirrored iPhone near the top-left of the screen.
 
-## Setup (first time or after reinstall)
+## First-Time Setup (Onboarding)
 
-1. **Grant permissions** - The agent needs two macOS permissions to function:
-   - **Screen Recording** - for capturing screenshots
-   - **Accessibility** - for mouse/keyboard control
+When you first launch the app, an **onboarding wizard** guides you through granting the required macOS permissions:
 
-2. **If you reinstalled or recompiled the app**, click "Reset Permissions" in the app UI first to clear stale permissions from the previous build. Then request both permissions again.
+### Step 1: Screen Recording Permission
+1. Click **"Enable"** next to "Screen Recording"
+2. macOS will prompt you to open System Settings
+3. In **System Settings → Privacy & Security → Screen Recording**, toggle **AnemllAgentHost** ON
+4. Return to the app and click **"Check Permissions"**
 
-3. **Restart the agent** after granting permissions (quit and relaunch from menu bar).
+### Step 2: Accessibility Permission
+1. Click **"Enable"** next to "Accessibility"
+2. macOS will prompt you to open System Settings
+3. In **System Settings → Privacy & Security → Accessibility**, toggle **AnemllAgentHost** ON
+4. Return to the app and click **"Check Permissions"**
 
-4. **Start the server** - Click "Start" in the app UI. The indicator should turn green.
+### Step 3: Complete Setup
+1. Once both permissions show green checkmarks, click **"Done"**
+2. The server will start automatically
+3. Copy the Bearer token to share with your Claude agent
 
-5. **Provide the Bearer token** to your Claude agent - Copy the token from the app UI and share it with the agent.
+> **Tip**: If permissions don't take effect, use the gear menu (⚙️) and select **"Restart App"**.
+
+## After Reinstall or Recompile
+
+If you reinstall or recompile the app, macOS may cache stale permissions:
+
+1. Open the app and click the **gear menu** (⚙️)
+2. Select **"Reset Permissions"** to clear TCC database entries
+3. Select **"Restart App"** (or quit and relaunch manually)
+4. The onboarding wizard will appear again to re-grant permissions
+
+Alternatively, use **"Reset & Restart"** to do both steps at once.
+
+## Skill Sync
+
+The app includes a bundled skill file for **Claude Code and Codex**. If you see **"Skill update available"**:
+1. Click **"Sync"** to copy the latest skill to:
+   - `~/.claude/skills/anemll-macos-agent/`
+   - `~/.codex/skills/custom/anemll-macos-agent/`
+2. This keeps your agent skill definitions in sync with the app version
+
+## Quick Reference
+
+| Action | How |
+|--------|-----|
+| Start/Stop server | Click "Start" or "Stop" button |
+| Rotate token | Click "Rotate Token" |
+| Copy token | Click clipboard icon next to token |
+| Toggle cursor overlay | Use "Cursor Overlay" toggle |
+| Restart app | Gear menu → "Restart App" |
+| Reset permissions | Gear menu → "Reset Permissions" |
+| Reset + restart | Gear menu → "Reset & Restart" |
+| Open Privacy settings | Gear menu → "Open Privacy Settings" |
+| Sync skill file | Click "Sync" when update available (Claude + Codex) |
 
 ## Context (informational only)
 
@@ -43,4 +96,4 @@ If you use or redistribute this software, you must retain the [NOTICE](NOTICE) f
 
 > "This product includes software developed by ANEMLL."
 
-Copyright 2025 ANEMLL
+Copyright 2026 ANEMLL

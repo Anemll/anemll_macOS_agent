@@ -3,6 +3,7 @@ import AppKit
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
+import Vision
 
 enum ScreenAndInput {
     enum Err: Error { case screenCaptureNotAllowed; case captureFailed; case writeFailed; case windowNotFound }
@@ -162,6 +163,95 @@ enum ScreenAndInput {
         CGImageDestinationAddImage(dest, cgImage, nil)
         if !CGImageDestinationFinalize(dest) {
             throw Err.writeFailed
+        }
+    }
+
+    // MARK: - Base64 encoding
+
+    /// Encodes a CGImage to PNG base64 string
+    static func imageToBase64(cgImage: CGImage) -> String? {
+        let mutableData = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(mutableData, UTType.png.identifier as CFString, 1, nil) else {
+            return nil
+        }
+        CGImageDestinationAddImage(dest, cgImage, nil)
+        guard CGImageDestinationFinalize(dest) else {
+            return nil
+        }
+        return (mutableData as Data).base64EncodedString()
+    }
+
+    // MARK: - OCR using Vision framework
+
+    /// OCR result for a detected text element
+    struct OCRResult {
+        let text: String
+        let x: Int
+        let y: Int
+        let w: Int
+        let h: Int
+        let confidence: Float
+    }
+
+    /// Performs OCR on a CGImage and returns detected text with bounding boxes
+    /// Coordinates are in image pixels (top-left origin)
+    static func performOCR(on cgImage: CGImage) -> [OCRResult] {
+        var results: [OCRResult] = []
+
+        let requestHandler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+
+        let request = VNRecognizeTextRequest { request, error in
+            guard error == nil,
+                  let observations = request.results as? [VNRecognizedTextObservation] else {
+                return
+            }
+
+            let imageWidth = CGFloat(cgImage.width)
+            let imageHeight = CGFloat(cgImage.height)
+
+            for observation in observations {
+                guard let topCandidate = observation.topCandidates(1).first else { continue }
+
+                // Convert normalized coordinates to image pixels
+                // Vision uses bottom-left origin with normalized coords (0-1)
+                let boundingBox = observation.boundingBox
+
+                let x = Int(boundingBox.origin.x * imageWidth)
+                let y = Int((1.0 - boundingBox.origin.y - boundingBox.height) * imageHeight)  // Flip Y
+                let w = Int(boundingBox.width * imageWidth)
+                let h = Int(boundingBox.height * imageHeight)
+
+                results.append(OCRResult(
+                    text: topCandidate.string,
+                    x: x, y: y, w: w, h: h,
+                    confidence: topCandidate.confidence
+                ))
+            }
+        }
+
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+
+        do {
+            try requestHandler.perform([request])
+        } catch {
+            // OCR failed, return empty results
+        }
+
+        return results
+    }
+
+    /// Converts OCR results to dictionary format for JSON response
+    static func ocrResultsToDictArray(_ results: [OCRResult]) -> [[String: Any]] {
+        return results.map { result in
+            [
+                "text": result.text,
+                "x": result.x,
+                "y": result.y,
+                "w": result.w,
+                "h": result.h,
+                "confidence": Double(result.confidence)
+            ]
         }
     }
 
@@ -355,15 +445,19 @@ enum ScreenAndInput {
     /// Priority: windowID > pid > app > title (uses first match)
     /// maxDimension: if > 0, resizes image to keep largest dimension under this limit
     /// resizeMode: .crop (default) preserves pixel accuracy; .scale resizes proportionally
+    /// returnBase64: if true, includes base64-encoded PNG in response (skips file write if path is nil)
+    /// performOCR: if true, runs text detection and includes results in response
     static func captureWindow(
         windowID: CGWindowID? = nil,
         pid: pid_t? = nil,
         app: String? = nil,
         title: String? = nil,
-        path: String = "/tmp/anemll_window.png",
+        path: String? = "/tmp/anemll_window.png",
         includeCursor: Bool = true,
         maxDimension: Int = 0,
-        resizeMode: ResizeMode = .crop
+        resizeMode: ResizeMode = .crop,
+        returnBase64: Bool = false,
+        runOCR: Bool = false
     ) throws -> [String: Any] {
         guard CGPreflightScreenCaptureAccess() else {
             throw Err.screenCaptureNotAllowed
@@ -458,16 +552,22 @@ enum ScreenAndInput {
             finalImage = processedImage
         }
 
-        try writePNG(cgImage: finalImage, to: URL(fileURLWithPath: path))
+        // Write to file if path is provided
+        if let path = path {
+            try writePNG(cgImage: finalImage, to: URL(fileURLWithPath: path))
+        }
 
         var info: [String: Any] = [
             "ok": true,
-            "path": path,
             "w": finalImage.width,
             "h": finalImage.height,
             "window_id": Int(targetWindowID),
             "ts": Int(Date().timeIntervalSince1970)
         ]
+
+        if let path = path {
+            info["path"] = path
+        }
 
         // Add resize info if image was resized
         if let resize = resizeInfo {
@@ -491,6 +591,46 @@ enum ScreenAndInput {
         }
         if let bounds = windowInfo?["bounds"] {
             info["bounds"] = bounds
+        }
+
+        // Add base64 image if requested
+        if returnBase64 {
+            if let base64 = imageToBase64(cgImage: finalImage) {
+                info["image_base64"] = base64
+            }
+        }
+
+        // Run OCR if requested
+        if runOCR {
+            let ocrResults = performOCR(on: finalImage)
+
+            // Calculate scale factor for converting OCR pixel coords to window point coords
+            // OCR returns image pixels, but /click_window expects window points
+            var ocrScale: Double = 1.0
+            if let bounds = windowBounds {
+                // Scale is image pixels / window points
+                ocrScale = Double(finalImage.width) / Double(bounds.width)
+            }
+
+            // Convert OCR results with scale-adjusted coordinates for clicking
+            var ocrDicts = ocrResultsToDictArray(ocrResults)
+            for i in 0..<ocrDicts.count {
+                // Add click_x, click_y that are ready to use with /click_window offset_x, offset_y
+                if let x = ocrDicts[i]["x"] as? Int,
+                   let y = ocrDicts[i]["y"] as? Int,
+                   let w = ocrDicts[i]["w"] as? Int,
+                   let h = ocrDicts[i]["h"] as? Int {
+                    // Center of the text bounding box, converted to window points
+                    let centerX = Double(x) + Double(w) / 2.0
+                    let centerY = Double(y) + Double(h) / 2.0
+                    ocrDicts[i]["click_x"] = Int(centerX / ocrScale)
+                    ocrDicts[i]["click_y"] = Int(centerY / ocrScale)
+                }
+            }
+
+            info["ocr"] = ocrDicts
+            info["ocr_count"] = ocrResults.count
+            info["ocr_scale"] = ocrScale
         }
 
         return info

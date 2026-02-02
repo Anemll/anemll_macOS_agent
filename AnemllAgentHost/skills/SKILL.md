@@ -159,36 +159,14 @@ Response includes:
 ```json
 {
   "ocr": [
-    {"text": "Download", "x": 250, "y": 300, "w": 80, "h": 24, "confidence": 0.95,
-     "click_x": 145, "click_y": 156},
-    {"text": "Cancel", "x": 250, "y": 340, "w": 60, "h": 24, "confidence": 0.92,
-     "click_x": 140, "click_y": 176}
+    {"text": "Download", "x": 250, "y": 300, "w": 80, "h": 24, "confidence": 0.95},
+    {"text": "Cancel", "x": 250, "y": 340, "w": 60, "h": 24, "confidence": 0.92}
   ],
-  "ocr_count": 2,
-  "ocr_scale": 2.0
+  "ocr_count": 2
 }
 ```
 
-**OCR coordinate fields:**
-- `x`, `y`, `w`, `h` - Raw bounding box in image pixels (for visualization)
-- `click_x`, `click_y` - **Pre-scaled coordinates** ready for `/click_window` offset_x, offset_y
-- `ocr_scale` - Scale factor applied (image_pixels / window_points)
-
-**Click by OCR text (recommended):**
-```bash
-# 1) Capture with OCR
-response=$(curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/capture" -d '{"app": "Safari", "ocr": true}')
-
-# 2) Find "Download" button and get its click coordinates
-click_x=$(echo "$response" | python3 -c "import json,sys; d=json.load(sys.stdin); print([o['click_x'] for o in d['ocr'] if 'Download' in o['text']][0])")
-click_y=$(echo "$response" | python3 -c "import json,sys; d=json.load(sys.stdin); print([o['click_y'] for o in d['ocr'] if 'Download' in o['text']][0])")
-
-# 3) Click at the pre-scaled coordinates
-curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/click_window" -d "{\"app\": \"Safari\", \"offset_x\": $click_x, \"offset_y\": $click_y}"
-```
-
+**Click by text:** Find element in OCR array, click at center: `x + w/2, y + h/2`
 **Combine with base64:** `{"app": "...", "ocr": true, "return_base64": true}`
 
 **Cursor positioning for reliable overlay:**
@@ -329,59 +307,6 @@ ssh -L 8765:localhost:8765 user@mac
 
 Shows last `/capture` image, auto-refreshes every 2 seconds. Requires auth token.
 
-## Calibration Procedure
-
-For precise clicking (especially iPhone Mirroring), calibrate to measure any coordinate offset:
-
-### Automatic calibration with `/calibrate` endpoint
-```bash
-curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/calibrate" -d '{"title": "iPhone Mirroring"}'
-```
-
-Response includes window info, OCR results with `click_x`/`click_y`, and calibration metadata.
-
-### Manual calibration steps
-
-**Step 1: Capture and identify a known element**
-```bash
-curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/capture" -d '{"title": "iPhone Mirroring", "ocr": true}' > /tmp/calib.json
-```
-
-**Step 2: Pick a clearly visible text element from OCR**
-```bash
-# Find element and its click coordinates
-python3 -c "import json; d=json.load(open('/tmp/calib.json')); [print(f\"{o['text']}: click_x={o['click_x']}, click_y={o['click_y']}\") for o in d['ocr'][:10]]"
-```
-
-**Step 3: Click the element**
-```bash
-curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/click_window" -d '{"title": "iPhone Mirroring", "offset_x": 145, "offset_y": 156}'
-```
-
-**Step 4: Capture again and check cursor position**
-The red cursor dot should be centered on the clicked element. If offset:
-- Measure the pixel delta between cursor and element center
-- Store as `calibration_offset_x`, `calibration_offset_y`
-- Apply: `offset_x = click_x + calibration_offset_x`
-
-**Step 5: Verify calibration**
-Repeat click with corrected coordinates. Cursor should land on target.
-
-### Storing calibration
-For consistent results, store calibration offsets per window type:
-```bash
-# iPhone Mirroring example (if 5px offset observed)
-export IPHONE_OFFSET_X=5
-export IPHONE_OFFSET_Y=0
-
-# Apply when clicking
-offset_x=$((click_x + IPHONE_OFFSET_X))
-offset_y=$((click_y + IPHONE_OFFSET_Y))
-```
-
 ## Troubleshooting
 
 | Error | Cause | Fix |
@@ -439,19 +364,3 @@ Claude Code's sandbox may block localhost connections. If curl commands fail wit
 - Full-screen screenshot: `/tmp/anemll_last.png`
 - Window capture: `/tmp/anemll_window.png`
 - Documentation: `CLAUDE_INSTRUCTIONS.md` in project repo
-
-### Base64-first workflow (fastest)
-
-```bash
-# Capture with base64 in response (no file read needed)
-curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" -X POST "$ANEMLL_HOST/capture" \
-  -d '{"title":"iPhone Mirroring","return_base64":true,"max_dimension":"playwright"}' | python3 - <<'PY'
-import sys, json, base64
-resp=json.load(sys.stdin)
-img=base64.b64decode(resp["image_base64"])
-open("/tmp/anemll_inline.png","wb").write(img)
-print("wrote /tmp/anemll_inline.png")
-PY
-```
-

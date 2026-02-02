@@ -14,6 +14,7 @@
 		A3EAE0F38AEBFFAE698E95CF /* CursorOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F3716353126ADE867054BB4 /* CursorOverlay.swift */; };
 		C4FB9F7DBE7AC3437CDE8D23 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40BE2C844E335C663384FD7E /* AppDelegate.swift */; };
 		D3A2B527F8683E8642728ABC /* HostViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC717FE689D299D9C26335A /* HostViewModel.swift */; };
+		SKILL0001ANEMLL0001SKILL /* skills in Resources */ = {isa = PBXBuildFile; fileRef = SKILL0002ANEMLL0002SKILL /* skills */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +27,7 @@
 		7F3716353126ADE867054BB4 /* CursorOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorOverlay.swift; sourceTree = "<group>"; };
 		E10DB755905C0F7BA9EA1094 /* AnemllAgentHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AnemllAgentHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F5C6E5868F35D8DEBAEDC878 /* LocalHTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHTTPServer.swift; sourceTree = "<group>"; };
+		SKILL0002ANEMLL0002SKILL /* skills */ = {isa = PBXFileReference; lastKnownFileType = folder; path = skills; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -40,6 +42,7 @@
 				6AE27F3CF6A4D351999C3BFF /* Info.plist */,
 				F5C6E5868F35D8DEBAEDC878 /* LocalHTTPServer.swift */,
 				03A6E13B3FCD4ADE418E6088 /* ScreenAndInput.swift */,
+				SKILL0002ANEMLL0002SKILL /* skills */,
 			);
 			path = AnemllAgentHost;
 			sourceTree = "<group>";
@@ -68,6 +71,7 @@
 			buildConfigurationList = 3E0FF5DBAD2B7D58D569B444 /* Build configuration list for PBXNativeTarget "AnemllAgentHost" */;
 			buildPhases = (
 				4AE859478B2D0ADBB8AC946A /* Sources */,
+				SKILL0003ANEMLL0003SKILL /* Resources */,
 			);
 			buildRules = (
 			);
@@ -112,6 +116,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		SKILL0003ANEMLL0003SKILL /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				SKILL0001ANEMLL0001SKILL /* skills in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		4AE859478B2D0ADBB8AC946A /* Sources */ = {
