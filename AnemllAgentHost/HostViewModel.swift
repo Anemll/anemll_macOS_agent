@@ -1,9 +1,13 @@
 import Foundation
 import ApplicationServices
 import Cocoa
+import Network
 
 @MainActor
 final class HostViewModel: ObservableObject {
+    private static let bindHost = "127.0.0.1"
+    private static let serverPort: UInt16 = 8765
+
     @Published var serverRunning: Bool = false
     @Published var token: String = UUID().uuidString
     @Published var lastStatus: String = "Idle"
@@ -23,6 +27,20 @@ final class HostViewModel: ObservableObject {
 
     private var server: LocalHTTPServer?
     private let cursorOverlay = CursorOverlay()
+
+    var serverAddress: String {
+        "\(Self.bindHost):\(Self.serverPort)"
+    }
+
+    var debugURL: String {
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = Self.bindHost
+        components.port = Int(Self.serverPort)
+        components.path = "/debug"
+        components.queryItems = [URLQueryItem(name: "token", value: token)]
+        return components.url?.absoluteString ?? "http://\(Self.bindHost):\(Self.serverPort)/debug?token=\(token)"
+    }
 
     @Published var showCursorOverlay: Bool = true {
         didSet {
@@ -124,19 +142,28 @@ final class HostViewModel: ObservableObject {
 
     func startServer() {
         do {
-            let s = LocalHTTPServer(bindHost: "127.0.0.1", port: 8765, bearerToken: token)
-            s.onLog = { [weak self] msg in
-                Task { @MainActor in self?.lastStatus = msg }
+            let s = LocalHTTPServer(bindHost: Self.bindHost, port: Self.serverPort, bearerToken: token)
+            s.onLog = { msg in
                 print("[LocalHTTPServer] \(msg)")
+            }
+            s.onState = { [weak self] state in
+                Task { @MainActor in
+                    self?.handleServerState(state)
+                }
             }
             try s.start()
             server = s
             serverRunning = true
-            lastStatus = "Server started"
+            lastStatus = "Starting server..."
         } catch {
-            lastStatus = "Server failed: \(error)"
             serverRunning = false
             server = nil
+            if isPortInUseError(error) {
+                lastStatus = portInUseStatus()
+                presentPortInUseAlert()
+            } else {
+                lastStatus = "Server failed: \(error)"
+            }
         }
     }
 
@@ -268,7 +295,7 @@ final class HostViewModel: ObservableObject {
         guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
             return "unknown"
         }
-        // Look for version in the skill file (e.g., "v0.1.4")
+        // Look for version in the skill file (e.g., "v0.1.5")
         if let range = content.range(of: #"AnemllAgentHost v[\d.]+"#, options: .regularExpression) {
             let match = String(content[range])
             return match.replacingOccurrences(of: "AnemllAgentHost ", with: "")
@@ -375,6 +402,68 @@ final class HostViewModel: ObservableObject {
             }
         } catch {
             lastStatus = "Failed to update CLAUDE.md: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Port Diagnostics
+
+    private func isPortInUseError(_ error: Error) -> Bool {
+        if let nwError = error as? NWError {
+            if case .posix(let posix) = nwError {
+                return posix == .EADDRINUSE
+            }
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == NSPOSIXErrorDomain && nsError.code == Int(EADDRINUSE) {
+            return true
+        }
+
+        return nsError.localizedDescription.lowercased().contains("address already in use")
+    }
+
+    private func presentPortInUseAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Port \(Self.serverPort) is already in use"
+        alert.informativeText = portInUseStatus()
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    private func portInUseStatus() -> String {
+        """
+Another app is listening on \(serverAddress).
+
+To find the process:
+lsof -nP -iTCP:\(Self.serverPort) -sTCP:LISTEN
+
+If nothing shows, macOS may require sudo:
+sudo lsof -nP -iTCP:\(Self.serverPort) -sTCP:LISTEN
+
+Quit that app (or the extra AnemllAgentHost instance) and try again.
+"""
+    }
+
+    private func handleServerState(_ state: NWListener.State) {
+        switch state {
+        case .ready:
+            serverRunning = true
+            lastStatus = "Server started"
+        case .failed(let error):
+            serverRunning = false
+            server = nil
+            if isPortInUseError(error) {
+                lastStatus = portInUseStatus()
+                presentPortInUseAlert()
+            } else {
+                lastStatus = "Server failed: \(error)"
+            }
+        case .cancelled:
+            serverRunning = false
+            server = nil
+            lastStatus = "Server stopped"
+        default:
+            break
         }
     }
 }

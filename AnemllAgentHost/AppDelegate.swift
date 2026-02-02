@@ -25,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.target = self
         }
 
+        checkForMultipleInstances()
+
         // Auto-start server if permissions are granted
         if viewModel.screenCaptureAllowed && viewModel.accessibilityAllowed {
             viewModel.startServer()
@@ -34,6 +36,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.showPopover()
             }
         }
+    }
+
+    private func checkForMultipleInstances() {
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.anemll.AnemllAgentHost"
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+        guard running.count > 1 else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            Task { @MainActor in
+                self?.showMultipleInstancesAlert(count: running.count)
+            }
+        }
+    }
+
+    @MainActor
+    private func showMultipleInstancesAlert(count: Int) {
+        let alert = NSAlert()
+        alert.messageText = "Multiple AnemllAgentHost instances detected"
+        alert.informativeText = """
+        There are \(count) instances running. This can cause port 8765 conflicts or token mismatches.
+        Quit extra instances from the menu bar or use Activity Monitor to stop them.
+        """
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+        viewModel.lastStatus = "Multiple instances detected"
     }
 
     private func showPopover() {
@@ -54,3 +81,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 }
+

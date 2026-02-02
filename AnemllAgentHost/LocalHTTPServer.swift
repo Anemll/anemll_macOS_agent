@@ -6,6 +6,7 @@ final class LocalHTTPServer {
     enum ServerError: Error { case startFailed(String) }
 
     var onLog: ((String) -> Void)?
+    var onState: ((NWListener.State) -> Void)?
 
     private let host: NWEndpoint.Host
     private let port: NWEndpoint.Port
@@ -32,6 +33,7 @@ final class LocalHTTPServer {
         }
         l.stateUpdateHandler = { [weak self] state in
             self?.onLog?("Listener: \(state)")
+            self?.onState?(state)
         }
 
         // Bind to localhost only by rejecting non-127.0.0.1 after accept:

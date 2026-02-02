@@ -134,7 +134,7 @@ struct ContentView: View {
                     .font(.subheadline)
                     .bold()
                 Spacer()
-                Text("127.0.0.1:8765")
+                Text(vm.serverAddress)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -177,6 +177,18 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color(nsColor: .windowBackgroundColor).opacity(0.6))
                 .cornerRadius(6)
+
+            HStack {
+                Spacer()
+                Button("Copy Debug URL") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(vm.debugURL, forType: .string)
+                    vm.lastStatus = "Debug URL copied"
+                }
+                .font(.caption)
+                .buttonStyle(.borderless)
+                .help("Copy /debug URL with token")
+            }
         }
     }
 
@@ -198,13 +210,19 @@ struct ContentView: View {
     }
 
     private var footerSection: some View {
-        HStack {
-            Button("Quit") { NSApp.terminate(nil) }
-            Spacer()
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Button("Quit") { NSApp.terminate(nil) }
+                Button("Restart") { vm.restartApp() }
+                Spacer()
+            }
             Text(vm.lastStatus)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(2)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
