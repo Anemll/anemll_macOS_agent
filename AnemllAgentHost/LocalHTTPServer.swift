@@ -385,45 +385,61 @@ final class LocalHTTPServer {
             }
 
         case ("GET", "/debug"):
-            // Debug viewer - serves HTML page that shows latest capture with auto-refresh
+            // Debug viewer - serves HTML page that shows latest capture without full-page refresh
             // Access via: http://127.0.0.1:8765/debug?token=YOUR_TOKEN (browser-friendly)
             // For SSH tunnel: ssh -L 8765:localhost:8765 user@mac
             let urlToken = req.queryParam("token") ?? ""
-            let tokenParam = urlToken.isEmpty ? "" : "&token=\(urlToken)"
-            let refreshUrl = urlToken.isEmpty ? "/debug" : "/debug?token=\(urlToken)"
+            let tokenParam = urlToken.isEmpty ? "" : "token=\(urlToken)"
             let html = """
             <!DOCTYPE html>
             <html>
             <head>
                 <title>AnemllAgentHost Debug Viewer</title>
-                <meta http-equiv="refresh" content="2;url=\(refreshUrl)">
                 <style>
                     body { font-family: -apple-system, sans-serif; margin: 20px; background: #1a1a1a; color: #fff; }
                     h1 { margin: 0 0 10px 0; }
                     .info { font-size: 12px; color: #888; margin-bottom: 10px; }
                     .container { display: flex; gap: 20px; }
                     .image-box { flex: 1; }
-                    .ocr-box { width: 300px; max-height: 600px; overflow-y: auto; }
                     img { max-width: 100%; border: 1px solid #333; }
-                    .ocr-item { padding: 5px; border-bottom: 1px solid #333; font-size: 11px; }
-                    .ocr-text { font-weight: bold; }
-                    .ocr-coords { color: #666; }
                     .no-image { padding: 40px; text-align: center; color: #666; border: 1px dashed #333; }
                 </style>
             </head>
             <body>
                 <h1>AnemllAgentHost Debug</h1>
-                <div class="info">Auto-refreshes every 2 seconds. Last window capture shown.</div>
+                <div class="info">Updates only when a new capture is available (no flashing).</div>
                 <div class="container">
                     <div class="image-box">
-                        <img id="capture" src="/debug/image?t=\(Int(Date().timeIntervalSince1970))\(tokenParam)"
+                        <img id="capture" src="" style="display:none;"
                              onerror="this.style.display='none';document.getElementById('no-img').style.display='block';">
-                        <div id="no-img" class="no-image" style="display:none;">No capture available.<br>Run /capture to see image here.</div>
+                        <div id="no-img" class="no-image">No capture available.<br>Run /capture to see image here.</div>
                     </div>
                 </div>
                 <script>
-                    // Prevent cache issues
-                    document.getElementById('capture').src = '/debug/image?t=' + Date.now() + '\(tokenParam)';
+                    let lastMtime = 0;
+                    const tokenParam = "\(tokenParam)";
+                    const metaUrl = tokenParam ? `/debug/meta?${tokenParam}` : "/debug/meta";
+                    const imgBase = tokenParam ? `/debug/image?${tokenParam}&t=` : "/debug/image?t=";
+
+                    async function poll() {
+                        try {
+                            const res = await fetch(metaUrl, { cache: "no-store" });
+                            if (!res.ok) return;
+                            const data = await res.json();
+                            if (data.mtime_ms && data.mtime_ms !== lastMtime) {
+                                lastMtime = data.mtime_ms;
+                                const img = document.getElementById("capture");
+                                img.src = imgBase + lastMtime;
+                                img.style.display = "block";
+                                document.getElementById("no-img").style.display = "none";
+                            }
+                        } catch (e) {
+                            // Ignore transient errors
+                        }
+                    }
+
+                    poll();
+                    setInterval(poll, 2000);
                 </script>
             </body>
             </html>
@@ -439,6 +455,16 @@ final class LocalHTTPServer {
                 // Return a 1x1 transparent PNG if no image exists
                 let emptyPNG = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")!
                 return HTTPResponse(status: 200, headers: ["Content-Type": "image/png"], body: emptyPNG)
+            }
+        case ("GET", "/debug/meta"):
+            // Return last modified time for the capture image (to avoid flashing refresh)
+            let path = "/tmp/anemll_window.png"
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+               let modDate = attrs[.modificationDate] as? Date {
+                let mtimeMs = Int(modDate.timeIntervalSince1970 * 1000)
+                return .json(200, ["ok": true, "mtime_ms": mtimeMs])
+            } else {
+                return .json(200, ["ok": false, "mtime_ms": 0])
             }
 
         case ("POST", "/calibrate"):
