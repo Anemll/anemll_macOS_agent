@@ -202,6 +202,13 @@ Response fields per window:
 
 Captures just one window to `/tmp/anemll_window.png`. **Much faster than full-screen capture.**
 
+**Image size limits for Claude Code:**
+- **1120 pixels** - Playwright MCP target (~1.15MP) - most reliable
+- **2000 pixels** - safe limit for sessions with many images (>20)
+- **8000 pixels** - hard limit
+
+Use `max_dimension` to auto-crop large windows (no scaling, preserves pixel accuracy):
+
 ```sh
 # By app name (partial match, case-insensitive)
 curl -s \
@@ -237,7 +244,41 @@ curl -s \
   -H "Content-Type: application/json" \
   -X POST "$ANEMLL_HOST/capture" \
   -d '{"app": "Xcode", "title": "HostViewModel"}'
+
+# With auto-trimming for Claude Code (recommended for automation)
+curl -s \
+  -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/capture" \
+  -d '{"app": "Safari", "max_dimension": "safe"}'
 ```
+
+**`max_dimension` values:**
+| Value | Pixels | Use case |
+|-------|--------|----------|
+| `"playwright"` or `"claudecode"` | 1120 | **Recommended** - matches Playwright MCP |
+| `"safe"` | 2000 | Safe for many-image sessions |
+| `"max"` | 8000 | Hard API limit |
+| `0` (default) | none | No cropping |
+| `1500` (int) | 1500 | Custom value |
+
+**Cursor-aware cropping:** When cropping is needed, the image is cropped (NOT scaled) to keep the cursor visible. Coordinates remain pixel-accurate. If cursor is in the top half, bottom is cropped; if in bottom half, top is cropped (same for left/right).
+
+**Response with cropping:**
+```json
+{
+  "ok": true,
+  "w": 1120,
+  "h": 900,
+  "trimmed": true,
+  "original_w": 2688,
+  "original_h": 900,
+  "trim_x": 784,
+  "trim_y": 0
+}
+```
+
+**Important:** Use `trim_x` and `trim_y` to adjust click coordinates when image was cropped. For example, if you identify a button at pixel (500, 200) in the cropped image and `trim_x` was 784, the actual window coordinate is (500 + 784, 200) = (1284, 200).
 
 ### 9) Click inside a specific window
 
@@ -288,6 +329,58 @@ curl -s \
   -H "Content-Type: application/json" \
   -X POST "$ANEMLL_HOST/focus" \
   -d '{"title": "iPhone Mirroring", "offset_x": 163, "offset_y": 200}'
+```
+
+### 11) Burst capture (rapid image sequences)
+
+Capture multiple frames rapidly for animation analysis, video scrubbing, or detecting UI transitions.
+
+```sh
+# Capture 10 frames at 100ms intervals (10 fps) from a window
+curl -s \
+  -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/burst" \
+  -d '{"app": "iPhone Mirroring", "count": 10, "interval_ms": 100}'
+
+# Full-screen burst capture (no window targeting)
+curl -s \
+  -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/burst" \
+  -d '{"count": 5, "interval_ms": 200}'
+
+# With auto-cropping for Claude Code
+curl -s \
+  -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/burst" \
+  -d '{"app": "Safari", "count": 10, "interval_ms": 100, "max_dimension": "playwright"}'
+```
+
+**Parameters:**
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `count` | 10 | Number of frames (max 100) |
+| `interval_ms` | 100 | Milliseconds between frames (min 10) |
+| `max_dimension` | 0 | Auto-resize frames (see capture options) |
+| `resize_mode` | "crop" | "crop" or "scale" |
+
+**Response:**
+```json
+{
+  "ok": true,
+  "count": 10,
+  "requested": 10,
+  "interval_ms": 100,
+  "duration_ms": 923,
+  "fps": 9.75,
+  "frames": [
+    {"frame": 0, "path": "/tmp/anemll_burst_0.png", "w": 1120, "h": 900, "ts": 1738000000000},
+    {"frame": 1, "path": "/tmp/anemll_burst_1.png", "w": 1120, "h": 900, "ts": 1738000000100},
+    ...
+  ]
+}
 ```
 
 ---

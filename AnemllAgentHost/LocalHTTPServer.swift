@@ -187,6 +187,39 @@ final class LocalHTTPServer {
             let pid = (body["pid"] as? Int).map { pid_t($0) }
             let app = body["app"] as? String
             let title = body["title"] as? String
+            let includeCursor = (body["cursor"] as? Bool) ?? true
+
+            // max_dimension: 0 = no resizing, "playwright" = 1120, "safe" = 2000, "max" = 8000, or specific int
+            // "playwright" matches Playwright MCP's 1.15MP target - most reliable for Claude Code
+            let maxDimension: Int
+            if let maxDimVal = body["max_dimension"] {
+                if let intVal = maxDimVal as? Int {
+                    maxDimension = intVal
+                } else if let strVal = maxDimVal as? String {
+                    switch strVal.lowercased() {
+                    case "playwright", "default", "claude", "claudecode", "optimal", "recommended":
+                        maxDimension = ScreenAndInput.defaultMaxDimension  // 1120 (Playwright target)
+                    case "safe", "2000":
+                        maxDimension = ScreenAndInput.safeMaxDimension     // 2000
+                    case "max", "hard", "limit":
+                        maxDimension = ScreenAndInput.hardMaxDimension     // 8000
+                    default:
+                        maxDimension = Int(strVal) ?? 0
+                    }
+                } else {
+                    maxDimension = 0
+                }
+            } else {
+                maxDimension = 0
+            }
+
+            // resize_mode: "crop" (default) preserves pixel accuracy, "scale" resizes proportionally
+            let resizeMode: ScreenAndInput.ResizeMode
+            if let modeStr = body["resize_mode"] as? String {
+                resizeMode = modeStr.lowercased() == "scale" ? .scale : .crop
+            } else {
+                resizeMode = .crop
+            }
 
             if windowID == nil && pid == nil && app == nil && title == nil {
                 return .json(400, ["error": "bad_request", "detail": "expected at least one of: window_id, pid, app, title"])
@@ -197,7 +230,10 @@ final class LocalHTTPServer {
                     windowID: windowID,
                     pid: pid,
                     app: app,
-                    title: title
+                    title: title,
+                    includeCursor: includeCursor,
+                    maxDimension: maxDimension,
+                    resizeMode: resizeMode
                 )
                 return .json(200, info)
             } catch ScreenAndInput.Err.windowNotFound {
@@ -272,6 +308,69 @@ final class LocalHTTPServer {
                 return .json(404, ["error": "window_not_found", "detail": "No matching window found"])
             } catch {
                 return .json(500, ["error": "click_window_failed", "detail": "\(error)"])
+            }
+
+        case ("POST", "/burst"):
+            let body = req.jsonBody ?? [:]
+
+            // Optional window targeting (if none provided, captures full screen)
+            let windowID = (body["window_id"] as? Int).map { CGWindowID($0) }
+            let pid = (body["pid"] as? Int).map { pid_t($0) }
+            let app = body["app"] as? String
+            let title = body["title"] as? String
+
+            // Burst parameters
+            let count = (body["count"] as? Int) ?? 10
+            let intervalMs = (body["interval_ms"] as? Int) ?? 100
+
+            // Resize parameters
+            let maxDimension: Int
+            if let maxDimVal = body["max_dimension"] {
+                if let intVal = maxDimVal as? Int {
+                    maxDimension = intVal
+                } else if let strVal = maxDimVal as? String {
+                    switch strVal.lowercased() {
+                    case "playwright", "default", "claude", "claudecode", "optimal", "recommended":
+                        maxDimension = ScreenAndInput.defaultMaxDimension
+                    case "safe", "2000":
+                        maxDimension = ScreenAndInput.safeMaxDimension
+                    case "max", "hard", "limit":
+                        maxDimension = ScreenAndInput.hardMaxDimension
+                    default:
+                        maxDimension = Int(strVal) ?? 0
+                    }
+                } else {
+                    maxDimension = 0
+                }
+            } else {
+                maxDimension = 0
+            }
+
+            let resizeMode: ScreenAndInput.ResizeMode
+            if let modeStr = body["resize_mode"] as? String {
+                resizeMode = modeStr.lowercased() == "scale" ? .scale : .crop
+            } else {
+                resizeMode = .crop
+            }
+
+            do {
+                let info = try ScreenAndInput.burstCapture(
+                    windowID: windowID,
+                    pid: pid,
+                    app: app,
+                    title: title,
+                    count: min(count, 100),  // Cap at 100 frames
+                    intervalMs: max(intervalMs, 10),  // Min 10ms interval
+                    maxDimension: maxDimension,
+                    resizeMode: resizeMode
+                )
+                return .json(200, info)
+            } catch ScreenAndInput.Err.windowNotFound {
+                return .json(404, ["error": "window_not_found", "detail": "No matching window found"])
+            } catch ScreenAndInput.Err.screenCaptureNotAllowed {
+                return .json(403, ["error": "screen_capture_not_allowed", "detail": "Screen Recording permission required"])
+            } catch {
+                return .json(500, ["error": "burst_failed", "detail": "\(error)"])
             }
 
         default:
