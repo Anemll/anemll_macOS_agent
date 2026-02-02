@@ -40,7 +40,14 @@ enum ScreenAndInput {
     private static var lastCaptureBounds: CGRect?
 
     // Writes /tmp/anemll_last.png and returns info JSON
-    static func takeScreenshot(path: String = "/tmp/anemll_last.png", includeCursor: Bool = true) throws -> [String: Any] {
+    // maxDimension: if > 0, resizes image to keep largest dimension under this limit
+    // resizeMode: .crop trims (keeps top-left if no cursor), .scale resizes proportionally
+    static func takeScreenshot(
+        path: String = "/tmp/anemll_last.png",
+        includeCursor: Bool = true,
+        maxDimension: Int = 0,
+        resizeMode: ResizeMode = .scale
+    ) throws -> [String: Any] {
         guard CGPreflightScreenCaptureAccess() else {
             throw Err.screenCaptureNotAllowed
         }
@@ -59,11 +66,39 @@ enum ScreenAndInput {
             updateLastCaptureScale(pixelWidth: cgImage.width, pixelHeight: cgImage.height, display: display)
         }
 
-        let finalImage: CGImage
+        let baseImage: CGImage
         if includeCursor, let withCursor = drawCursorOverlay(on: cgImage) {
-            finalImage = withCursor
+            baseImage = withCursor
         } else {
-            finalImage = cgImage
+            baseImage = cgImage
+        }
+
+        // Apply resizing if maxDimension is specified and image exceeds it
+        let finalImage: CGImage
+        var resizeInfo: [String: Any]? = nil
+
+        if maxDimension > 0 && (baseImage.width > maxDimension || baseImage.height > maxDimension) {
+            switch resizeMode {
+            case .crop:
+                let (cropped, info) = cropImageToMaxDimension(
+                    baseImage,
+                    maxDimension: maxDimension,
+                    cursorPosition: nil
+                )
+                finalImage = cropped ?? baseImage
+                resizeInfo = info
+                resizeInfo?["mode"] = "crop"
+            case .scale:
+                let (scaled, info) = scaleImageToMaxDimension(
+                    baseImage,
+                    maxDimension: maxDimension
+                )
+                finalImage = scaled ?? baseImage
+                resizeInfo = info
+                resizeInfo?["mode"] = "scale"
+            }
+        } else {
+            finalImage = baseImage
         }
 
         try writePNG(cgImage: finalImage, to: URL(fileURLWithPath: path))
@@ -74,6 +109,15 @@ enum ScreenAndInput {
             "h": finalImage.height,
             "ts": Int(Date().timeIntervalSince1970)
         ]
+        if let resize = resizeInfo {
+            info["resized"] = true
+            info["resize_mode"] = resize["mode"]
+            info["original_w"] = resize["original_w"]
+            info["original_h"] = resize["original_h"]
+            if let trimX = resize["trim_x"] { info["trim_x"] = trimX }
+            if let trimY = resize["trim_y"] { info["trim_y"] = trimY }
+            if let scale = resize["scale"] { info["scale"] = scale }
+        }
         if let display {
             let scale = effectiveScale(display: display)
             info["screen_w"] = Double(display.bounds.width)
@@ -154,7 +198,9 @@ enum ScreenAndInput {
     }
 
     private static func writePNG(cgImage: CGImage, to url: URL) throws {
-        guard let dest = CGImageDestinationCreateWithURL(url as CFURL,
+        // Write atomically to avoid readers seeing partial PNGs.
+        let tmpURL = URL(fileURLWithPath: url.path + ".tmp")
+        guard let dest = CGImageDestinationCreateWithURL(tmpURL as CFURL,
                                                          UTType.png.identifier as CFString,
                                                          1,
                                                          nil)
@@ -164,6 +210,24 @@ enum ScreenAndInput {
         if !CGImageDestinationFinalize(dest) {
             throw Err.writeFailed
         }
+
+        guard isValidPNG(at: tmpURL) else {
+            try? FileManager.default.removeItem(at: tmpURL)
+            throw Err.writeFailed
+        }
+
+        _ = try FileManager.default.replaceItemAt(url, withItemAt: tmpURL)
+    }
+
+    private static func isValidPNG(at url: URL) -> Bool {
+        guard let fh = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? fh.close() }
+
+        let sig = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        if let data = try? fh.read(upToCount: 8), data == sig {
+            return true
+        }
+        return false
     }
 
     // MARK: - Base64 encoding

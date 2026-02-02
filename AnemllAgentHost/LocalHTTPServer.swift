@@ -8,6 +8,31 @@ final class LocalHTTPServer {
     var onLog: ((String) -> Void)?
     var onState: ((NWListener.State) -> Void)?
 
+    // Debug viewer state: sequence-based to avoid relying on filesystem mtime resolution.
+    private static let debugCaptureLock = NSLock()
+    private static var debugCaptureSeq: Int64 = 0
+    private static var debugCaptureMs: Int64 = 0
+
+    private static func bumpDebugCapture(nowMs: Int64? = nil) {
+        let ms = nowMs ?? Int64(Date().timeIntervalSince1970 * 1000)
+        debugCaptureLock.lock()
+        debugCaptureSeq += 1
+        debugCaptureMs = max(debugCaptureMs, ms)
+        debugCaptureLock.unlock()
+    }
+
+    private static func debugCaptureMeta(fileMtimeMs: Int64?) -> (seq: Int64, ms: Int64) {
+        debugCaptureLock.lock()
+        if let m = fileMtimeMs, m > debugCaptureMs {
+            debugCaptureSeq += 1
+            debugCaptureMs = m
+        }
+        let seq = debugCaptureSeq
+        let ms = debugCaptureMs
+        debugCaptureLock.unlock()
+        return (seq, ms)
+    }
+
     private let host: NWEndpoint.Host
     private let port: NWEndpoint.Port
     private var listener: NWListener?
@@ -143,8 +168,46 @@ final class LocalHTTPServer {
 
         case ("POST", "/screenshot"):
             do {
-                let includeCursor = (req.jsonBody?["cursor"] as? Bool) ?? true
-                let info = try ScreenAndInput.takeScreenshot(includeCursor: includeCursor)
+                let body = req.jsonBody ?? [:]
+                let includeCursor = (body["cursor"] as? Bool) ?? true
+
+                // Default to Claude-friendly size if caller doesn't specify
+                let maxDimension: Int
+                if let maxDimVal = body["max_dimension"] {
+                    if let intVal = maxDimVal as? Int {
+                        maxDimension = intVal
+                    } else if let strVal = maxDimVal as? String {
+                        switch strVal.lowercased() {
+                        case "playwright", "default", "claude", "claudecode", "optimal", "recommended":
+                            maxDimension = ScreenAndInput.defaultMaxDimension  // 1120
+                        case "safe", "2000":
+                            maxDimension = ScreenAndInput.safeMaxDimension     // 2000
+                        case "max", "hard", "limit":
+                            maxDimension = ScreenAndInput.hardMaxDimension     // 8000
+                        case "full", "none", "0":
+                            maxDimension = 0
+                        default:
+                            maxDimension = Int(strVal) ?? ScreenAndInput.defaultMaxDimension
+                        }
+                    } else {
+                        maxDimension = ScreenAndInput.defaultMaxDimension
+                    }
+                } else {
+                    maxDimension = ScreenAndInput.defaultMaxDimension
+                }
+
+                let resizeMode: ScreenAndInput.ResizeMode
+                if let modeStr = body["resize_mode"] as? String {
+                    resizeMode = modeStr.lowercased() == "crop" ? .crop : .scale
+                } else {
+                    resizeMode = .scale
+                }
+
+                let info = try ScreenAndInput.takeScreenshot(
+                    includeCursor: includeCursor,
+                    maxDimension: maxDimension,
+                    resizeMode: resizeMode
+                )
                 return .json(200, info)
             } catch {
                 return .json(500, ["error": "screenshot_failed", "detail": "\(error)"])
@@ -248,6 +311,9 @@ final class LocalHTTPServer {
                     returnBase64: returnBase64,
                     runOCR: runOCR
                 )
+                if (info["path"] as? String) == "/tmp/anemll_window.png" {
+                    Self.bumpDebugCapture()
+                }
                 return .json(200, info)
             } catch ScreenAndInput.Err.windowNotFound {
                 return .json(404, ["error": "window_not_found", "detail": "No matching window found"])
@@ -418,6 +484,7 @@ final class LocalHTTPServer {
                     </div>
                 </div>
                 <script>
+                    let lastSeq = 0;
                     let lastMtime = 0;
                     const tokenParam = "\(tokenParam)";
                     const metaUrl = tokenParam ? `/debug/meta?${tokenParam}` : "/debug/meta";
@@ -428,10 +495,13 @@ final class LocalHTTPServer {
                             const res = await fetch(metaUrl, { cache: "no-store" });
                             if (!res.ok) return;
                             const data = await res.json();
-                            if (data.mtime_ms && data.mtime_ms !== lastMtime) {
-                                lastMtime = data.mtime_ms;
+                            const seq = data.seq || 0;
+                            const mtime = data.mtime_ms || 0;
+                            if ((seq && seq !== lastSeq) || (!seq && mtime && mtime !== lastMtime)) {
+                                lastSeq = seq;
+                                lastMtime = mtime || Date.now();
                                 const img = document.getElementById("capture");
-                                img.src = imgBase + lastMtime;
+                                img.src = imgBase + (mtime || lastMtime);
                                 img.style.display = "block";
                                 document.getElementById("no-img").style.display = "none";
                             }
@@ -463,10 +533,12 @@ final class LocalHTTPServer {
             let path = "/tmp/anemll_window.png"
             if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
                let modDate = attrs[.modificationDate] as? Date {
-                let mtimeMs = Int(modDate.timeIntervalSince1970 * 1000)
-                return .json(200, ["ok": true, "mtime_ms": mtimeMs])
+                let mtimeMs = Int64(modDate.timeIntervalSince1970 * 1000)
+                let meta = Self.debugCaptureMeta(fileMtimeMs: mtimeMs)
+                return .json(200, ["ok": true, "mtime_ms": mtimeMs, "seq": meta.seq, "last_capture_ms": meta.ms])
             } else {
-                return .json(200, ["ok": false, "mtime_ms": 0])
+                let meta = Self.debugCaptureMeta(fileMtimeMs: nil)
+                return .json(200, ["ok": false, "mtime_ms": 0, "seq": meta.seq, "last_capture_ms": meta.ms])
             }
 
         case ("POST", "/calibrate"):
