@@ -235,6 +235,24 @@ final class LocalHTTPServer {
             let ok = ScreenAndInput.move(x: x, y: y, space: space)
             return .json(ok ? 200 : 500, ["ok": ok])
 
+        case ("POST", "/scroll"):
+            guard let body = req.jsonBody else {
+                return .json(400, ["error": "bad_request", "detail": "expected {dx,dy}"])
+            }
+            let dx = body["dx"] as? Double ?? 0
+            let dy = body["dy"] as? Double ?? 0
+            if dx == 0 && dy == 0 {
+                return .json(400, ["error": "bad_request", "detail": "expected non-zero dx or dy"])
+            }
+
+            if let x = body["x"] as? Double, let y = body["y"] as? Double {
+                let space = ScreenAndInput.CoordinateSpace.parse(body["space"])
+                _ = ScreenAndInput.move(x: x, y: y, space: space)
+            }
+
+            let ok = ScreenAndInput.scroll(dx: dx, dy: dy, isContinuous: true)
+            return .json(ok ? 200 : 500, ["ok": ok, "dx": dx, "dy": dy])
+
         case ("POST", "/type"):
             guard let body = req.jsonBody,
                   let text = body["text"] as? String
@@ -389,6 +407,49 @@ final class LocalHTTPServer {
                 return .json(500, ["error": "click_window_failed", "detail": "\(error)"])
             }
 
+        case ("POST", "/scroll_window"):
+            let body = req.jsonBody ?? [:]
+
+            // At least one identifier must be provided
+            let windowID = (body["window_id"] as? Int).map { CGWindowID($0) }
+            let pid = (body["pid"] as? Int).map { pid_t($0) }
+            let app = body["app"] as? String
+            let title = body["title"] as? String
+
+            if windowID == nil && pid == nil && app == nil && title == nil {
+                return .json(400, ["error": "bad_request", "detail": "expected at least one of: window_id, pid, app, title"])
+            }
+
+            let dx = body["dx"] as? Double ?? 0
+            let dy = body["dy"] as? Double ?? 0
+            if dx == 0 && dy == 0 {
+                return .json(400, ["error": "bad_request", "detail": "expected non-zero dx or dy"])
+            }
+
+            let offsetX = body["offset_x"] as? Double
+            let offsetY = body["offset_y"] as? Double
+
+            do {
+                let info = try ScreenAndInput.moveCursorToWindow(
+                    windowID: windowID,
+                    pid: pid,
+                    app: app,
+                    title: title,
+                    offsetX: offsetX,
+                    offsetY: offsetY
+                )
+                let ok = ScreenAndInput.scroll(dx: dx, dy: dy, isContinuous: true)
+                var payload = info
+                payload["ok"] = ok
+                payload["dx"] = dx
+                payload["dy"] = dy
+                return .json(ok ? 200 : 500, payload)
+            } catch ScreenAndInput.Err.windowNotFound {
+                return .json(404, ["error": "window_not_found", "detail": "No matching window found"])
+            } catch {
+                return .json(500, ["error": "scroll_window_failed", "detail": "\(error)"])
+            }
+
         case ("POST", "/burst"):
             let body = req.jsonBody ?? [:]
 
@@ -516,7 +577,15 @@ final class LocalHTTPServer {
             </body>
             </html>
             """
-            return .html(200, html)
+            return HTTPResponse(
+                status: 200,
+                headers: [
+                    "Content-Type": "text/html; charset=utf-8",
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                    "Pragma": "no-cache"
+                ],
+                body: Data(html.utf8)
+            )
 
         case ("GET", "/debug/image"):
             // Serve the last captured window image

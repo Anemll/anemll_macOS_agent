@@ -83,6 +83,18 @@ curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/j
   -X POST "$ANEMLL_HOST/move" -d '{"x":960,"y":540}'
 ```
 
+### Scroll (global)
+Scrolls at current cursor position, or move cursor first by providing `x`,`y`.
+```bash
+# Scroll down (content moves up)
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/scroll" -d '{"dy":-300}'
+
+# Scroll up (content moves down) at a specific screen point
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/scroll" -d '{"x":800,"y":300,"dy":300}'
+```
+
 ### Get mouse position
 ```bash
 curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" "$ANEMLL_HOST/mouse"
@@ -201,6 +213,20 @@ curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/j
 # Click at offset from window's top-left (in points)
 curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
   -X POST "$ANEMLL_HOST/click_window" -d '{"app": "Safari", "offset_x": 100, "offset_y": 50}'
+```
+
+### Scroll inside window (recommended)
+Moves cursor into the window then scrolls. Use this for Settings panes, console views, etc.
+```bash
+# Scroll down (content moves up) inside a window
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/scroll_window" \
+  -d '{"app":"ANEMLL Chat","title":"Settings","offset_x":450,"offset_y":120,"dy":-500}'
+
+# Scroll up (content moves down) inside a window
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/scroll_window" \
+  -d '{"app":"ANEMLL Chat","title":"Settings","offset_x":450,"offset_y":120,"dy":500}'
 ```
 
 **Coordinate conversion from capture response:**

@@ -153,6 +153,20 @@ enum ScreenAndInput {
         return true
     }
 
+    // Scroll by dx/dy in pixels. Positive dy scrolls up, negative dy scrolls down.
+    static func scroll(dx: Double = 0, dy: Double, isContinuous: Bool = true) -> Bool {
+        let wheel1 = Int32(dy.rounded())
+        let wheel2 = Int32(dx.rounded())
+        guard let ev = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: wheel1, wheel2: wheel2, wheel3: 0) else {
+            return false
+        }
+        if isContinuous {
+            ev.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+        }
+        ev.post(tap: .cghidEventTap)
+        return true
+    }
+
     static func mouseLocation() -> CGPoint? {
         return CGEvent(source: nil)?.location
     }
