@@ -258,12 +258,9 @@ struct OnboardingView: View {
                 isComplete: vm.screenCaptureAllowed,
                 isCurrent: vm.onboardingStep == 0
             ) {
-                // Request permission FIRST so app appears in System Settings list
+                // Trigger the macOS prompt. Don't auto-open System Settings here: doing so can
+                // steal focus and hide the permission dialog behind Settings.
                 vm.requestScreenCapture()
-                // Then open settings after a delay to allow the request to register
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    vm.openSystemSettingsScreenRecording()
-                }
             }
 
             // Step 2: Accessibility
@@ -274,12 +271,9 @@ struct OnboardingView: View {
                 isComplete: vm.accessibilityAllowed,
                 isCurrent: vm.onboardingStep == 1
             ) {
-                // Request permission FIRST so app appears in System Settings list
+                // Trigger the macOS prompt. Don't auto-open System Settings here for the same
+                // reason as Screen Recording (it can hide the dialog behind Settings).
                 vm.requestAccessibility()
-                // Then open settings after a delay to allow the request to register
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    vm.openSystemSettingsAccessibility()
-                }
             }
 
             Spacer()
@@ -400,12 +394,9 @@ struct StalePermissionHelpView: View {
                 .buttonStyle(.borderedProminent)
 
                 Button("Open Settings") {
-                    // Request permissions first so app appears in list
-                    vm.requestScreenCapture()
-                    vm.requestAccessibility()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        vm.openSystemSettingsPrivacy()
-                    }
+                    // Just open the Privacy pane. Requesting permissions here can trigger system
+                    // dialogs that then get hidden behind System Settings.
+                    vm.openSystemSettingsPrivacy()
                 }
                 .font(.caption)
             }

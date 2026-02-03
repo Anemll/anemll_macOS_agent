@@ -79,7 +79,7 @@ curl -s \
 Expected:
 
 ```json
-{"ok":true,"version":"0.1.5"}
+{"ok":true,"version":"0.1.7"}
 ```
 
 If you get `{"error":"unauthorized"}` then the token in the shell does not match the token shown in the app UI (or you are on the wrong Mac).

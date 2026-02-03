@@ -183,20 +183,26 @@ final class HostViewModel: ObservableObject {
     }
 
     func requestScreenCapture() {
+        // Ensure the system permission dialog isn't hidden behind another app's window.
+        NSApp.activate(ignoringOtherApps: true)
+
         // Will prompt the user (macOS may require app restart after granting).
         _ = CGRequestScreenCaptureAccess()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.refreshPermissions()
-            self?.lastStatus = "Requested Screen Recording permission"
+            self?.lastStatus = "Screen Recording: respond to the macOS permission dialog"
         }
     }
 
     func requestAccessibility() {
+        // Ensure the system permission dialog isn't hidden behind another app's window.
+        NSApp.activate(ignoringOtherApps: true)
+
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(opts)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.refreshPermissions()
-            self?.lastStatus = "Requested Accessibility permission"
+            self?.lastStatus = "Accessibility: respond to the macOS permission dialog"
         }
     }
 
@@ -295,7 +301,7 @@ final class HostViewModel: ObservableObject {
         guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
             return "unknown"
         }
-        // Look for version in the skill file (e.g., "v0.1.5")
+        // Look for version in the skill file (e.g., "v0.1.7")
         if let range = content.range(of: #"AnemllAgentHost v[\d.]+"#, options: .regularExpression) {
             let match = String(content[range])
             return match.replacingOccurrences(of: "AnemllAgentHost ", with: "")

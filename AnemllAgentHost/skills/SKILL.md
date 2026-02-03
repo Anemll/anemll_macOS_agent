@@ -46,7 +46,7 @@ export ANEMLL_TOKEN="PASTE_TOKEN_FROM_MENU_APP"
 ```bash
 curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" "$ANEMLL_HOST/health"
 ```
-Response: `{"ok":true,"version":"0.1.5"}`
+Response: `{"ok":true,"version":"0.1.7"}`
 
 ### Screenshot (full screen)
 Saves to `/tmp/anemll_last.png`
@@ -152,7 +152,7 @@ curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/j
 - `"crop"` (default) - Cursor-aware cropping, preserves pixel accuracy
 - `"scale"` - Proportional scaling, loses pixel accuracy
 
-### Base64 Image Response (v0.1.5+)
+### Base64 Image Response (v0.1.4+)
 Get image data directly in JSON response instead of reading from file:
 ```bash
 curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
@@ -162,7 +162,7 @@ curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/j
 Response includes `"image_base64": "iVBORw0KGgo..."` - decode with `base64 -d`.
 **Benefit:** Eliminates file read step, faster automation loop.
 
-### OCR Text Detection (v0.1.5+)
+### OCR Text Detection (v0.1.4+)
 Detect text and get bounding boxes without visual analysis:
 ```bash
 curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
@@ -320,7 +320,7 @@ curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/j
 curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -X POST "$ANEMLL_HOST/screenshot"
 ```
 
-## Debug Viewer (v0.1.5+)
+## Debug Viewer (v0.1.4+)
 
 View captures in browser with auto-refresh (useful for SSH debugging):
 ```
@@ -384,7 +384,7 @@ Add to `.claude/settings.local.json` under `permissions.allow`:
 Claude Code's sandbox may block localhost connections. If curl commands fail with exit code 7 but the server is running, retry with `dangerouslyDisableSandbox: true`. This is safe for localhost-only APIs.
 
 ## Version assumptions
-- AnemllAgentHost v0.1.5+
+- AnemllAgentHost v0.1.7+
 - macOS 14+ (for screen capture APIs)
 - HTTP API on port 8765
 
