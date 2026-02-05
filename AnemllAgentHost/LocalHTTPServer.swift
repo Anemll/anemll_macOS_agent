@@ -224,6 +224,28 @@ final class LocalHTTPServer {
             let ok = ScreenAndInput.click(x: x, y: y, space: space)
             return .json(ok ? 200 : 500, ["ok": ok])
 
+        case ("POST", "/double_click"):
+            guard let body = req.jsonBody,
+                  let x = body["x"] as? Double,
+                  let y = body["y"] as? Double
+            else {
+                return .json(400, ["error": "bad_request", "detail": "expected {x,y}"])
+            }
+            let space = ScreenAndInput.CoordinateSpace.parse(body["space"])
+            let ok = ScreenAndInput.doubleClick(x: x, y: y, space: space)
+            return .json(ok ? 200 : 500, ["ok": ok])
+
+        case ("POST", "/right_click"):
+            guard let body = req.jsonBody,
+                  let x = body["x"] as? Double,
+                  let y = body["y"] as? Double
+            else {
+                return .json(400, ["error": "bad_request", "detail": "expected {x,y}"])
+            }
+            let space = ScreenAndInput.CoordinateSpace.parse(body["space"])
+            let ok = ScreenAndInput.rightClick(x: x, y: y, space: space)
+            return .json(ok ? 200 : 500, ["ok": ok])
+
         case ("POST", "/move"):
             guard let body = req.jsonBody,
                   let x = body["x"] as? Double,

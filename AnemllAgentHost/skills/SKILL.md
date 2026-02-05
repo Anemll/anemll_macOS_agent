@@ -1,10 +1,12 @@
 ---
 name: anemll-macos-agent
+version: 0.1.8
 description: Control macOS UI via AnemllAgentHost HTTP API for automated testing, screen capture, and UI interaction. Use when you need to take screenshots, click UI elements, type text, or control specific application windows on macOS. Provides both full-screen and window-based automation commands. Do not use for tasks that don't require GUI interaction.
 aliases: ["Anemll harness"]
 ---
 
 # ANEMLL macOS Agent (UI Automation via HTTP)
+**Skill version: 0.1.8** (must match AnemllAgentHost app version)
 
 ## What this skill is for
 Automate macOS UI interactions via the AnemllAgentHost localhost HTTP API. Enables screenshot capture, mouse clicks, keyboard input, and window-specific operations for testing, QC, and verification tasks.
@@ -46,7 +48,7 @@ export ANEMLL_TOKEN="PASTE_TOKEN_FROM_MENU_APP"
 ```bash
 curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" "$ANEMLL_HOST/health"
 ```
-Response: `{"ok":true,"version":"0.1.7"}`
+Response: `{"ok":true,"version":"0.1.8"}`
 
 ### Screenshot (full screen)
 Saves to `/tmp/anemll_last.png`
@@ -69,6 +71,18 @@ curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/j
 # Image pixels from screenshot (origin top-left)
 curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
   -X POST "$ANEMLL_HOST/click" -d '{"x":1920,"y":1080,"space":"image_pixels"}'
+```
+
+### Double-click (v0.1.8+)
+```bash
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/double_click" -d '{"x":960,"y":540}'
+```
+
+### Right-click (v0.1.8+)
+```bash
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/right_click" -d '{"x":960,"y":540}'
 ```
 
 ### Type text
@@ -98,6 +112,25 @@ curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/j
 ### Get mouse position
 ```bash
 curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" "$ANEMLL_HOST/mouse"
+```
+
+## Text Input Best Practices
+
+### Replacing Text in Text Fields
+
+**macOS Dialog Fields**: When a Save/Open dialog appears, the filename field typically has its contents pre-selected. Type immediately after the dialog opens to replace the entire contents.
+
+```bash
+# 1) Click button that opens Save dialog
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/click_window" -d '{"app": "Xcode", "offset_x": 100, "offset_y": 50}'
+
+# 2) Wait for dialog to appear
+sleep 0.5
+
+# 3) Type immediately - replaces pre-selected text
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/type" -d '{"text": "NewFilename"}'
 ```
 
 ## Window-Based Commands (Recommended)
@@ -384,7 +417,7 @@ Add to `.claude/settings.local.json` under `permissions.allow`:
 Claude Code's sandbox may block localhost connections. If curl commands fail with exit code 7 but the server is running, retry with `dangerouslyDisableSandbox: true`. This is safe for localhost-only APIs.
 
 ## Version assumptions
-- AnemllAgentHost v0.1.7+
+- AnemllAgentHost v0.1.8+
 - macOS 14+ (for screen capture APIs)
 - HTTP API on port 8765
 

@@ -131,17 +131,58 @@ enum ScreenAndInput {
         return info
     }
 
-    static func click(x: Double, y: Double, space: CoordinateSpace = .screenPoints) -> Bool {
+    static func click(x: Double, y: Double, space: CoordinateSpace = .screenPoints, clickCount: Int = 1, button: CGMouseButton = .left) -> Bool {
         guard let pt = screenPoint(x: x, y: y, space: space) else { return false }
 
-        guard let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: pt, mouseButton: .left),
-              let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: pt, mouseButton: .left)
+        let (downType, upType): (CGEventType, CGEventType) = switch button {
+        case .left: (.leftMouseDown, .leftMouseUp)
+        case .right: (.rightMouseDown, .rightMouseUp)
+        default: (.otherMouseDown, .otherMouseUp)
+        }
+
+        guard let down = CGEvent(mouseEventSource: nil, mouseType: downType, mouseCursorPosition: pt, mouseButton: button),
+              let up = CGEvent(mouseEventSource: nil, mouseType: upType, mouseCursorPosition: pt, mouseButton: button)
         else { return false }
+
+        // Set click count for double/triple clicks
+        down.setIntegerValueField(.mouseEventClickState, value: Int64(clickCount))
+        up.setIntegerValueField(.mouseEventClickState, value: Int64(clickCount))
 
         down.post(tap: .cghidEventTap)
         usleep(10_000)
         up.post(tap: .cghidEventTap)
         return true
+    }
+
+    /// Double-click at coordinates
+    static func doubleClick(x: Double, y: Double, space: CoordinateSpace = .screenPoints) -> Bool {
+        guard let pt = screenPoint(x: x, y: y, space: space) else { return false }
+
+        // First click
+        guard let down1 = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: pt, mouseButton: .left),
+              let up1 = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: pt, mouseButton: .left),
+              let down2 = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: pt, mouseButton: .left),
+              let up2 = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: pt, mouseButton: .left)
+        else { return false }
+
+        down1.setIntegerValueField(.mouseEventClickState, value: 1)
+        up1.setIntegerValueField(.mouseEventClickState, value: 1)
+        down2.setIntegerValueField(.mouseEventClickState, value: 2)
+        up2.setIntegerValueField(.mouseEventClickState, value: 2)
+
+        down1.post(tap: .cghidEventTap)
+        usleep(10_000)
+        up1.post(tap: .cghidEventTap)
+        usleep(50_000) // Brief pause between clicks
+        down2.post(tap: .cghidEventTap)
+        usleep(10_000)
+        up2.post(tap: .cghidEventTap)
+        return true
+    }
+
+    /// Right-click at coordinates
+    static func rightClick(x: Double, y: Double, space: CoordinateSpace = .screenPoints) -> Bool {
+        return click(x: x, y: y, space: space, clickCount: 1, button: .right)
     }
 
     static func move(x: Double, y: Double, space: CoordinateSpace = .screenPoints) -> Bool {

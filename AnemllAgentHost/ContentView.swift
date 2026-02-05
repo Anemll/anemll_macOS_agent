@@ -146,10 +146,10 @@ struct ContentView: View {
                 Button("Rotate Token") {
                     vm.rotateToken()
                 }
-                Button("Update CLAUDE.md") {
-                    vm.updateClaudeToken()
+                Button("Install Skills") {
+                    vm.install()
                 }
-                .help("Save current token to ~/.claude/CLAUDE.md")
+                .help("Install skills to ~/.claude and ~/.codex directories")
                 Spacer()
             }
 

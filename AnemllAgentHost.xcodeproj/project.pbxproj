@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -12,6 +12,7 @@
 		710BCE35BB5B0BA1BD2662AD /* AnemllAgentHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F2E2556D4C1CC6FA955D3BD /* AnemllAgentHostApp.swift */; };
 		92809023BC55F38E192519B1 /* LocalHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5C6E5868F35D8DEBAEDC878 /* LocalHTTPServer.swift */; };
 		A3EAE0F38AEBFFAE698E95CF /* CursorOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F3716353126ADE867054BB4 /* CursorOverlay.swift */; };
+		ASSETS0001ANEMLL0001ASSET /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = ASSETS0002ANEMLL0002ASSET /* Assets.xcassets */; };
 		C4FB9F7DBE7AC3437CDE8D23 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40BE2C844E335C663384FD7E /* AppDelegate.swift */; };
 		D3A2B527F8683E8642728ABC /* HostViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC717FE689D299D9C26335A /* HostViewModel.swift */; };
 		SKILL0001ANEMLL0001SKILL /* skills in Resources */ = {isa = PBXBuildFile; fileRef = SKILL0002ANEMLL0002SKILL /* skills */; };
@@ -25,6 +26,7 @@
 		6AE27F3CF6A4D351999C3BFF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		7F2E2556D4C1CC6FA955D3BD /* AnemllAgentHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnemllAgentHostApp.swift; sourceTree = "<group>"; };
 		7F3716353126ADE867054BB4 /* CursorOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorOverlay.swift; sourceTree = "<group>"; };
+		ASSETS0002ANEMLL0002ASSET /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E10DB755905C0F7BA9EA1094 /* AnemllAgentHost.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AnemllAgentHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F5C6E5868F35D8DEBAEDC878 /* LocalHTTPServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHTTPServer.swift; sourceTree = "<group>"; };
 		SKILL0002ANEMLL0002SKILL /* skills */ = {isa = PBXFileReference; lastKnownFileType = folder; path = skills; sourceTree = "<group>"; };
@@ -36,6 +38,7 @@
 			children = (
 				7F2E2556D4C1CC6FA955D3BD /* AnemllAgentHostApp.swift */,
 				40BE2C844E335C663384FD7E /* AppDelegate.swift */,
+				ASSETS0002ANEMLL0002ASSET /* Assets.xcassets */,
 				55C4F05153B97E1E2788549E /* ContentView.swift */,
 				7F3716353126ADE867054BB4 /* CursorOverlay.swift */,
 				1BC717FE689D299D9C26335A /* HostViewModel.swift */,
@@ -108,7 +111,6 @@
 			);
 			mainGroup = 294C2462670EBFDCBFCB6206;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -122,6 +124,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ASSETS0001ANEMLL0001ASSET /* Assets.xcassets in Resources */,
 				SKILL0001ANEMLL0001SKILL /* skills in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -149,15 +152,31 @@
 		1592C696B5EA83BA48B07D79 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				AUTOMATION_APPLE_EVENTS = NO;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = ARRY5366Y3;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				INFOPLIST_FILE = AnemllAgentHost/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.anemll.AnemllAgentHost;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SDKROOT = macosx;
 			};
 			name = Debug;
@@ -166,7 +185,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -232,7 +251,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -290,15 +309,31 @@
 		C31B8453A3330DEF4D7FADD8 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				AUTOMATION_APPLE_EVENTS = NO;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = ARRY5366Y3;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
 				INFOPLIST_FILE = AnemllAgentHost/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.anemll.AnemllAgentHost;
+				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
+				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
+				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
+				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
+				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SDKROOT = macosx;
 			};
 			name = Release;

@@ -301,7 +301,7 @@ final class HostViewModel: ObservableObject {
         guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
             return "unknown"
         }
-        // Look for version in the skill file (e.g., "v0.1.7")
+        // Look for version in the skill file (e.g., "v0.1.8")
         if let range = content.range(of: #"AnemllAgentHost v[\d.]+"#, options: .regularExpression) {
             let match = String(content[range])
             return match.replacingOccurrences(of: "AnemllAgentHost ", with: "")
@@ -383,12 +383,12 @@ final class HostViewModel: ObservableObject {
 
     // MARK: - Update CLAUDE.md Token
 
-    func updateClaudeToken() {
+    func updateClaudeToken() -> Bool {
         let claudeMdPath = NSHomeDirectory() + "/.claude/CLAUDE.md"
 
         guard FileManager.default.fileExists(atPath: claudeMdPath) else {
             lastStatus = "CLAUDE.md not found"
-            return
+            return false
         }
 
         do {
@@ -402,12 +402,68 @@ final class HostViewModel: ObservableObject {
             if let range = content.range(of: pattern, options: .regularExpression) {
                 content.replaceSubrange(range, with: replacement)
                 try content.write(toFile: claudeMdPath, atomically: true, encoding: .utf8)
-                lastStatus = "Token updated in CLAUDE.md"
+                return true
             } else {
                 lastStatus = "Token pattern not found in CLAUDE.md"
+                return false
             }
         } catch {
             lastStatus = "Failed to update CLAUDE.md: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    // MARK: - Install Skills (to Claude & Codex directories only)
+
+    func install() {
+        var results: [String] = []
+
+        // Install skill to both Claude and Codex skill directories
+        // NOTE: Does NOT modify CLAUDE.md to keep user settings safe
+        let claudeDir = NSHomeDirectory() + "/.claude/skills/anemll-macos-agent"
+        let claudePath = claudeDir + "/SKILL.md"
+        let codexDir = NSHomeDirectory() + "/.codex/skills/custom/anemll-macos-agent"
+        let codexPath = codexDir + "/SKILL.md"
+
+        // Find bundled skill
+        var sourcePath: String?
+        if let path = Bundle.main.path(forResource: "SKILL", ofType: "md", inDirectory: "skills") {
+            sourcePath = path
+        } else {
+            let altPath = Bundle.main.bundlePath + "/Contents/Resources/skills/SKILL.md"
+            if FileManager.default.fileExists(atPath: altPath) {
+                sourcePath = altPath
+            }
+        }
+
+        if let source = sourcePath {
+            do {
+                // Create directories if needed
+                try FileManager.default.createDirectory(atPath: claudeDir, withIntermediateDirectories: true)
+                try FileManager.default.createDirectory(atPath: codexDir, withIntermediateDirectories: true)
+
+                // Remove existing files and copy new
+                if FileManager.default.fileExists(atPath: claudePath) {
+                    try FileManager.default.removeItem(atPath: claudePath)
+                }
+                try FileManager.default.copyItem(atPath: source, toPath: claudePath)
+                results.append("Claude")
+
+                if FileManager.default.fileExists(atPath: codexPath) {
+                    try FileManager.default.removeItem(atPath: codexPath)
+                }
+                try FileManager.default.copyItem(atPath: source, toPath: codexPath)
+                results.append("Codex")
+            } catch {
+                lastStatus = "Skill install failed: \(error.localizedDescription)"
+            }
+        }
+
+        if results.isEmpty {
+            lastStatus = "Install failed"
+        } else {
+            lastStatus = "Skills installed: \(results.joined(separator: " + "))"
+            checkSkillSync()  // Refresh status
         }
     }
 
