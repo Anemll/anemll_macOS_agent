@@ -1,10 +1,12 @@
 import Cocoa
 import SwiftUI
+import Combine
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var viewModel: HostViewModel!
+    private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         viewModel = HostViewModel()
@@ -24,6 +26,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.action = #selector(togglePopover(_:))
             button.target = self
         }
+
+        // Observe server running state to update icon color
+        viewModel.$serverRunning
+            .receive(on: RunLoop.main)
+            .sink { [weak self] isRunning in
+                self?.updateStatusIcon(isRunning: isRunning)
+            }
+            .store(in: &cancellables)
 
         checkForMultipleInstances()
 
@@ -78,6 +88,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Refresh permissions when popover opens
             viewModel.refreshPermissions()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+    }
+
+    private func updateStatusIcon(isRunning: Bool) {
+        guard let button = statusItem.button else { return }
+        let symbolName = "sparkles"
+        guard let baseImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Anemll Agent Host") else { return }
+
+        if isRunning {
+            // Create green-tinted version when server is running
+            let config = NSImage.SymbolConfiguration(paletteColors: [.systemGreen])
+            button.image = baseImage.withSymbolConfiguration(config)
+        } else {
+            // Default appearance when server is stopped
+            button.image = baseImage
         }
     }
 }
