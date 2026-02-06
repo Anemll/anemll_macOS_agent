@@ -153,6 +153,13 @@ final class LocalHTTPServer {
             let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
             return .json(200, ["ok": true, "version": version])
 
+        case ("POST", "/mcp"):
+            return routeMCP(req)
+
+        case ("OPTIONS", "/mcp"):
+            // Allow non-browser MCP clients that may probe endpoints.
+            return HTTPResponse(status: 204, headers: [:], body: Data())
+
         case ("GET", "/mouse"):
             if let pt = ScreenAndInput.mouseLocation() {
                 var payload: [String: Any] = ["x": Double(pt.x), "y": Double(pt.y), "space": "screen_points"]
@@ -170,6 +177,7 @@ final class LocalHTTPServer {
             do {
                 let body = req.jsonBody ?? [:]
                 let includeCursor = (body["cursor"] as? Bool) ?? true
+                let returnBase64 = (body["return_base64"] as? Bool) ?? false
 
                 // Default to Claude-friendly size if caller doesn't specify
                 let maxDimension: Int
@@ -206,7 +214,8 @@ final class LocalHTTPServer {
                 let info = try ScreenAndInput.takeScreenshot(
                     includeCursor: includeCursor,
                     maxDimension: maxDimension,
-                    resizeMode: resizeMode
+                    resizeMode: resizeMode,
+                    returnBase64: returnBase64
                 )
                 return .json(200, info)
             } catch {
@@ -702,6 +711,700 @@ final class LocalHTTPServer {
             return .json(404, ["error": "not_found"])
         }
     }
+
+    // MARK: - MCP (Model Context Protocol) JSON-RPC
+
+    private static let supportedMCPProtocolVersions: [String] = [
+        "2025-11-25",
+        "2025-06-18",
+        "2025-03-26"
+    ]
+
+    private func routeMCP(_ req: HTTPRequest) -> HTTPResponse {
+        // Basic Origin validation (MCP recommends rejecting browser origins to prevent DNS rebinding).
+        if let origin = req.headers["origin"], !isAllowedMCPOrigin(origin) {
+            return .json(403, ["error": "forbidden", "detail": "origin_not_allowed"])
+        }
+
+        guard !req.body.isEmpty else {
+            return HTTPResponse.jsonAny(200, jsonrpcError(id: nil, code: -32700, message: "Parse error", data: "empty_body"))
+        }
+
+        let payloadAny: Any
+        do {
+            payloadAny = try JSONSerialization.jsonObject(with: req.body, options: [])
+        } catch {
+            return HTTPResponse.jsonAny(200, jsonrpcError(id: nil, code: -32700, message: "Parse error", data: "\(error)"))
+        }
+
+        if let msg = payloadAny as? [String: Any] {
+            if let response = handleMCPMessage(msg) {
+                return HTTPResponse.jsonAny(200, response)
+            }
+            // Notification: no JSON-RPC response.
+            return HTTPResponse(status: 202, headers: ["Content-Type": "application/json"], body: Data())
+        }
+
+        if let batch = payloadAny as? [Any] {
+            var responses: [Any] = []
+            for item in batch {
+                guard let msg = item as? [String: Any] else {
+                    responses.append(jsonrpcError(id: nil, code: -32600, message: "Invalid Request"))
+                    continue
+                }
+                if let resp = handleMCPMessage(msg) {
+                    responses.append(resp)
+                }
+            }
+
+            if responses.isEmpty {
+                return HTTPResponse(status: 202, headers: ["Content-Type": "application/json"], body: Data())
+            }
+            return HTTPResponse.jsonAny(200, responses)
+        }
+
+        return HTTPResponse.jsonAny(200, jsonrpcError(id: nil, code: -32600, message: "Invalid Request", data: "expected_object_or_array"))
+    }
+
+    private func isAllowedMCPOrigin(_ origin: String) -> Bool {
+        let o = origin.lowercased()
+        if o == "null" { return true }
+        if o.hasPrefix("file://") { return true }
+        // Only strictly validate browser-like origins (http/https). Non-http schemes are allowed.
+        if o.hasPrefix("http://") || o.hasPrefix("https://") {
+            if o.hasPrefix("http://127.0.0.1") { return true }
+            if o.hasPrefix("http://localhost") { return true }
+            if o.hasPrefix("https://127.0.0.1") { return true }
+            if o.hasPrefix("https://localhost") { return true }
+            return false
+        }
+        return true
+    }
+
+    private func handleMCPMessage(_ msg: [String: Any]) -> [String: Any]? {
+        // JSON-RPC 2.0 envelope
+        guard (msg["jsonrpc"] as? String) == "2.0" else {
+            return jsonrpcError(id: nil, code: -32600, message: "Invalid Request", data: "missing_jsonrpc_2.0")
+        }
+
+        let id = msg["id"]
+        guard let method = msg["method"] as? String else {
+            return jsonrpcError(id: nil, code: -32600, message: "Invalid Request", data: "missing_method")
+        }
+
+        let params = msg["params"] as? [String: Any] ?? [:]
+
+        // Notifications have no id and must not return a JSON-RPC response.
+        let isNotification = (id == nil)
+
+        do {
+            switch method {
+            case "initialize":
+                if isNotification {
+                    return jsonrpcError(id: nil, code: -32600, message: "Invalid Request", data: "initialize_requires_id")
+                }
+                let result = try mcpInitialize(params: params)
+                return jsonrpcResult(id: id, result: result)
+
+            case "ping":
+                return isNotification ? nil : jsonrpcResult(id: id, result: [:])
+
+            case "tools/list":
+                let result: [String: Any] = ["tools": mcpToolsList()]
+                return isNotification ? nil : jsonrpcResult(id: id, result: result)
+
+            case "tools/call":
+                let result = try mcpToolsCall(params: params)
+                return isNotification ? nil : jsonrpcResult(id: id, result: result)
+
+            case "resources/list":
+                let result: [String: Any] = ["resources": []]
+                return isNotification ? nil : jsonrpcResult(id: id, result: result)
+
+            case "prompts/list":
+                let result: [String: Any] = ["prompts": []]
+                return isNotification ? nil : jsonrpcResult(id: id, result: result)
+
+            case "notifications/initialized":
+                return nil
+
+            default:
+                if isNotification { return nil }
+                return jsonrpcError(id: id, code: -32601, message: "Method not found", data: method)
+            }
+        } catch let err as MCPToolError {
+            if isNotification { return nil }
+            return jsonrpcError(id: id, code: -32602, message: "Invalid params", data: err.message)
+        } catch {
+            if isNotification { return nil }
+            return jsonrpcError(id: id, code: -32603, message: "Internal error", data: "\(error)")
+        }
+    }
+
+    private func mcpInitialize(params: [String: Any]) throws -> [String: Any] {
+        let requested = params["protocolVersion"] as? String
+        let negotiated: String
+        if let requested, Self.supportedMCPProtocolVersions.contains(requested) {
+            negotiated = requested
+        } else if requested == nil {
+            negotiated = Self.supportedMCPProtocolVersions.first ?? "2025-06-18"
+        } else {
+            throw MCPToolError("unsupported_protocol_version: \(requested)")
+        }
+
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        let serverInfo: [String: Any] = ["name": "AnemllAgentHost", "version": version]
+        let capabilities: [String: Any] = [
+            "tools": ["listChanged": false]
+        ]
+
+        return [
+            "protocolVersion": negotiated,
+            "capabilities": capabilities,
+            "serverInfo": serverInfo,
+            "instructions": "Local macOS UI automation tools (screenshot, window capture, click, type) over localhost."
+        ]
+    }
+
+    private func mcpToolsList() -> [[String: Any]] {
+        // Minimal, stable tool surface. Names are prefixed to avoid collisions in multi-server clients.
+        return [
+            [
+                "name": "anemll_screenshot",
+                "description": "Take a full-screen screenshot. Writes /tmp/anemll_last.png and can optionally return base64 PNG.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "cursor": ["type": "boolean", "default": true],
+                        "return_base64": ["type": "boolean", "default": false],
+                        "max_dimension": [
+                            "anyOf": [
+                                ["type": "integer"],
+                                ["type": "string"]
+                            ],
+                            "description": "0 or \"full\" for no resize; \"playwright\"(1120), \"safe\"(2000), \"max\"(8000), or an integer."
+                        ],
+                        "resize_mode": ["type": "string", "enum": ["scale", "crop"], "default": "scale"]
+                    ],
+                    "additionalProperties": false
+                ]
+            ],
+            [
+                "name": "anemll_mouse",
+                "description": "Get current mouse position (screen points plus image pixel coords when available).",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [String: Any](),
+                    "additionalProperties": false
+                ]
+            ],
+            [
+                "name": "anemll_windows",
+                "description": "List visible windows and bounds.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "on_screen": ["type": "boolean", "default": true]
+                    ],
+                    "additionalProperties": false
+                ]
+            ],
+            [
+                "name": "anemll_capture",
+                "description": "Capture a specific window by id/pid/app/title. Writes /tmp/anemll_window.png and can optionally return base64 PNG and/or OCR results.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "window_id": ["type": "integer"],
+                        "pid": ["type": "integer"],
+                        "app": ["type": "string"],
+                        "title": ["type": "string"],
+                        "cursor": ["type": "boolean", "default": true],
+                        "return_base64": ["type": "boolean", "default": false],
+                        "ocr": ["type": "boolean", "default": false],
+                        "max_dimension": [
+                            "anyOf": [
+                                ["type": "integer"],
+                                ["type": "string"]
+                            ],
+                            "description": "0 for no resize; \"playwright\"(1120), \"safe\"(2000), \"max\"(8000), or an integer."
+                        ],
+                        "resize_mode": ["type": "string", "enum": ["crop", "scale"], "default": "crop"]
+                    ],
+                    "additionalProperties": false
+                ]
+            ],
+            [
+                "name": "anemll_click",
+                "description": "Click at screen coordinates.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "x": ["type": "number"],
+                        "y": ["type": "number"],
+                        "space": ["type": "string", "enum": ["screen_points", "image_pixels"], "default": "screen_points"]
+                    ],
+                    "required": ["x", "y"],
+                    "additionalProperties": false
+                ]
+            ],
+            [
+                "name": "anemll_double_click",
+                "description": "Double-click at screen coordinates.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "x": ["type": "number"],
+                        "y": ["type": "number"],
+                        "space": ["type": "string", "enum": ["screen_points", "image_pixels"], "default": "screen_points"]
+                    ],
+                    "required": ["x", "y"],
+                    "additionalProperties": false
+                ]
+            ],
+            [
+                "name": "anemll_right_click",
+                "description": "Right-click at screen coordinates.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "x": ["type": "number"],
+                        "y": ["type": "number"],
+                        "space": ["type": "string", "enum": ["screen_points", "image_pixels"], "default": "screen_points"]
+                    ],
+                    "required": ["x", "y"],
+                    "additionalProperties": false
+                ]
+            ],
+            [
+                "name": "anemll_move",
+                "description": "Move mouse to screen coordinates.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "x": ["type": "number"],
+                        "y": ["type": "number"],
+                        "space": ["type": "string", "enum": ["screen_points", "image_pixels"], "default": "screen_points"]
+                    ],
+                    "required": ["x", "y"],
+                    "additionalProperties": false
+                ]
+            ],
+            [
+                "name": "anemll_scroll",
+                "description": "Scroll by dx/dy (pixels). Optional x/y moves cursor first.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "dx": ["type": "number", "default": 0],
+                        "dy": ["type": "number"],
+                        "x": ["type": "number"],
+                        "y": ["type": "number"],
+                        "space": ["type": "string", "enum": ["screen_points", "image_pixels"], "default": "screen_points"]
+                    ],
+                    "required": ["dy"],
+                    "additionalProperties": false
+                ]
+            ],
+            [
+                "name": "anemll_type",
+                "description": "Type text into the currently focused control.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "text": ["type": "string"]
+                    ],
+                    "required": ["text"],
+                    "additionalProperties": false
+                ]
+            ],
+            [
+                "name": "anemll_focus_window",
+                "description": "Move cursor to a window (optionally to an offset in window points).",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "window_id": ["type": "integer"],
+                        "pid": ["type": "integer"],
+                        "app": ["type": "string"],
+                        "title": ["type": "string"],
+                        "offset_x": ["type": "number"],
+                        "offset_y": ["type": "number"]
+                    ],
+                    "additionalProperties": false
+                ]
+            ],
+            [
+                "name": "anemll_click_window",
+                "description": "Click inside a window (optionally at an offset in window points).",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "window_id": ["type": "integer"],
+                        "pid": ["type": "integer"],
+                        "app": ["type": "string"],
+                        "title": ["type": "string"],
+                        "offset_x": ["type": "number"],
+                        "offset_y": ["type": "number"]
+                    ],
+                    "additionalProperties": false
+                ]
+            ],
+            [
+                "name": "anemll_scroll_window",
+                "description": "Scroll inside a window by dx/dy (pixels), optionally at an offset in window points.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "window_id": ["type": "integer"],
+                        "pid": ["type": "integer"],
+                        "app": ["type": "string"],
+                        "title": ["type": "string"],
+                        "offset_x": ["type": "number"],
+                        "offset_y": ["type": "number"],
+                        "dx": ["type": "number", "default": 0],
+                        "dy": ["type": "number", "default": 0]
+                    ],
+                    "additionalProperties": false
+                ]
+            ],
+            [
+                "name": "anemll_burst",
+                "description": "Capture multiple frames rapidly (optionally from a window). Writes /tmp/anemll_burst_*.png.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "window_id": ["type": "integer"],
+                        "pid": ["type": "integer"],
+                        "app": ["type": "string"],
+                        "title": ["type": "string"],
+                        "count": ["type": "integer", "default": 10],
+                        "interval_ms": ["type": "integer", "default": 100],
+                        "max_dimension": [
+                            "anyOf": [
+                                ["type": "integer"],
+                                ["type": "string"]
+                            ]
+                        ],
+                        "resize_mode": ["type": "string", "enum": ["crop", "scale"], "default": "crop"]
+                    ],
+                    "additionalProperties": false
+                ]
+            ]
+        ]
+    }
+
+    private func mcpToolsCall(params: [String: Any]) throws -> [String: Any] {
+        guard let toolName = params["name"] as? String else {
+            throw MCPToolError("missing_tool_name")
+        }
+        let arguments = (params["arguments"] as? [String: Any]) ?? (params["args"] as? [String: Any]) ?? [:]
+
+        switch toolName {
+        case "anemll_screenshot":
+            let includeCursor = (arguments["cursor"] as? Bool) ?? true
+            let returnBase64 = (arguments["return_base64"] as? Bool) ?? false
+            let maxDimension = parseMaxDimension(arguments["max_dimension"], defaultValue: ScreenAndInput.defaultMaxDimension)
+            let resizeMode = parseResizeMode(arguments["resize_mode"], defaultValue: .scale)
+
+            let info = try ScreenAndInput.takeScreenshot(
+                includeCursor: includeCursor,
+                maxDimension: maxDimension,
+                resizeMode: resizeMode,
+                returnBase64: returnBase64
+            )
+            return mcpToolResult(from: info)
+
+        case "anemll_mouse":
+            guard let pt = ScreenAndInput.mouseLocation() else {
+                return mcpToolErrorResult("mouse_unavailable")
+            }
+            var payload: [String: Any] = ["x": Double(pt.x), "y": Double(pt.y), "space": "screen_points"]
+            if let imagePt = ScreenAndInput.imageLocation(fromScreen: pt) {
+                payload["image_x"] = Double(imagePt.x)
+                payload["image_y"] = Double(imagePt.y)
+                payload["image_space"] = "image_pixels"
+            }
+            return mcpToolResult(from: payload)
+
+        case "anemll_windows":
+            let onScreenOnly = (arguments["on_screen"] as? Bool) ?? true
+            let windows = ScreenAndInput.listWindows(onScreenOnly: onScreenOnly)
+            return mcpToolResult(from: ["ok": true, "count": windows.count, "windows": windows])
+
+        case "anemll_capture":
+            let windowID = intValue(arguments["window_id"]).map { CGWindowID($0) }
+            let pid = intValue(arguments["pid"]).map { pid_t($0) }
+            let app = arguments["app"] as? String
+            let title = arguments["title"] as? String
+
+            if windowID == nil && pid == nil && app == nil && title == nil {
+                throw MCPToolError("expected at least one of: window_id, pid, app, title")
+            }
+
+            let includeCursor = (arguments["cursor"] as? Bool) ?? true
+            let returnBase64 = (arguments["return_base64"] as? Bool) ?? false
+            let runOCR = (arguments["ocr"] as? Bool) ?? false
+            let maxDimension = parseMaxDimension(arguments["max_dimension"], defaultValue: 0)
+            let resizeMode = parseResizeMode(arguments["resize_mode"], defaultValue: .crop)
+
+            let info = try ScreenAndInput.captureWindow(
+                windowID: windowID,
+                pid: pid,
+                app: app,
+                title: title,
+                includeCursor: includeCursor,
+                maxDimension: maxDimension,
+                resizeMode: resizeMode,
+                returnBase64: returnBase64,
+                runOCR: runOCR
+            )
+            return mcpToolResult(from: info)
+
+        case "anemll_click":
+            let (x, y, space) = try parseXY(arguments)
+            let ok = ScreenAndInput.click(x: x, y: y, space: space)
+            return mcpToolResult(from: ["ok": ok])
+
+        case "anemll_double_click":
+            let (x, y, space) = try parseXY(arguments)
+            let ok = ScreenAndInput.doubleClick(x: x, y: y, space: space)
+            return mcpToolResult(from: ["ok": ok])
+
+        case "anemll_right_click":
+            let (x, y, space) = try parseXY(arguments)
+            let ok = ScreenAndInput.rightClick(x: x, y: y, space: space)
+            return mcpToolResult(from: ["ok": ok])
+
+        case "anemll_move":
+            let (x, y, space) = try parseXY(arguments)
+            let ok = ScreenAndInput.move(x: x, y: y, space: space)
+            return mcpToolResult(from: ["ok": ok])
+
+        case "anemll_scroll":
+            let dx = doubleValue(arguments["dx"]) ?? 0
+            let dy = doubleValue(arguments["dy"]) ?? 0
+            if dx == 0 && dy == 0 {
+                throw MCPToolError("expected non-zero dx or dy")
+            }
+            if let x = doubleValue(arguments["x"]), let y = doubleValue(arguments["y"]) {
+                let space = ScreenAndInput.CoordinateSpace.parse(arguments["space"])
+                _ = ScreenAndInput.move(x: x, y: y, space: space)
+            }
+            let ok = ScreenAndInput.scroll(dx: dx, dy: dy, isContinuous: true)
+            return mcpToolResult(from: ["ok": ok, "dx": dx, "dy": dy])
+
+        case "anemll_type":
+            guard let text = arguments["text"] as? String else { throw MCPToolError("expected {text}") }
+            let ok = ScreenAndInput.type(text: text)
+            return mcpToolResult(from: ["ok": ok])
+
+        case "anemll_focus_window":
+            let (windowID, pid, app, title) = parseWindowTarget(arguments)
+            if windowID == nil && pid == nil && app == nil && title == nil {
+                throw MCPToolError("expected at least one of: window_id, pid, app, title")
+            }
+            let offsetX = doubleValue(arguments["offset_x"])
+            let offsetY = doubleValue(arguments["offset_y"])
+            let info = try ScreenAndInput.moveCursorToWindow(
+                windowID: windowID,
+                pid: pid,
+                app: app,
+                title: title,
+                offsetX: offsetX,
+                offsetY: offsetY
+            )
+            return mcpToolResult(from: info)
+
+        case "anemll_click_window":
+            let (windowID, pid, app, title) = parseWindowTarget(arguments)
+            if windowID == nil && pid == nil && app == nil && title == nil {
+                throw MCPToolError("expected at least one of: window_id, pid, app, title")
+            }
+            let offsetX = doubleValue(arguments["offset_x"])
+            let offsetY = doubleValue(arguments["offset_y"])
+            let info = try ScreenAndInput.clickInWindow(
+                windowID: windowID,
+                pid: pid,
+                app: app,
+                title: title,
+                offsetX: offsetX,
+                offsetY: offsetY
+            )
+            return mcpToolResult(from: info)
+
+        case "anemll_scroll_window":
+            let (windowID, pid, app, title) = parseWindowTarget(arguments)
+            if windowID == nil && pid == nil && app == nil && title == nil {
+                throw MCPToolError("expected at least one of: window_id, pid, app, title")
+            }
+            let dx = doubleValue(arguments["dx"]) ?? 0
+            let dy = doubleValue(arguments["dy"]) ?? 0
+            if dx == 0 && dy == 0 {
+                throw MCPToolError("expected non-zero dx or dy")
+            }
+            let offsetX = doubleValue(arguments["offset_x"])
+            let offsetY = doubleValue(arguments["offset_y"])
+            var info = try ScreenAndInput.moveCursorToWindow(
+                windowID: windowID,
+                pid: pid,
+                app: app,
+                title: title,
+                offsetX: offsetX,
+                offsetY: offsetY
+            )
+            let ok = ScreenAndInput.scroll(dx: dx, dy: dy, isContinuous: true)
+            info["ok"] = ok
+            info["dx"] = dx
+            info["dy"] = dy
+            return mcpToolResult(from: info)
+
+        case "anemll_burst":
+            let windowID = intValue(arguments["window_id"]).map { CGWindowID($0) }
+            let pid = intValue(arguments["pid"]).map { pid_t($0) }
+            let app = arguments["app"] as? String
+            let title = arguments["title"] as? String
+
+            let count = intValue(arguments["count"]) ?? 10
+            let intervalMs = intValue(arguments["interval_ms"]) ?? 100
+
+            let maxDimension = parseMaxDimension(arguments["max_dimension"], defaultValue: 0)
+            let resizeMode = parseResizeMode(arguments["resize_mode"], defaultValue: .crop)
+
+            let info = try ScreenAndInput.burstCapture(
+                windowID: windowID,
+                pid: pid,
+                app: app,
+                title: title,
+                count: count,
+                intervalMs: intervalMs,
+                maxDimension: maxDimension,
+                resizeMode: resizeMode
+            )
+            return mcpToolResult(from: info)
+
+        default:
+            throw MCPToolError("unknown_tool: \(toolName)")
+        }
+    }
+
+    private func mcpToolResult(from info: [String: Any]) -> [String: Any] {
+        var content: [[String: Any]] = []
+
+        var textInfo = info
+        let maybeBase64 = textInfo.removeValue(forKey: "image_base64") as? String
+
+        if let json = jsonString(textInfo) {
+            content.append(["type": "text", "text": json])
+        } else {
+            content.append(["type": "text", "text": "\(textInfo)"])
+        }
+
+        if let base64 = maybeBase64 {
+            content.append(["type": "image", "data": base64, "mimeType": "image/png"])
+        }
+
+        return ["content": content]
+    }
+
+    private func mcpToolErrorResult(_ message: String) -> [String: Any] {
+        return [
+            "isError": true,
+            "content": [
+                ["type": "text", "text": message]
+            ]
+        ]
+    }
+
+    private func jsonString(_ obj: Any) -> String? {
+        guard JSONSerialization.isValidJSONObject(obj),
+              let data = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted]),
+              let s = String(data: data, encoding: .utf8)
+        else { return nil }
+        return s
+    }
+
+    private func jsonrpcResult(id: Any?, result: Any) -> [String: Any] {
+        var resp: [String: Any] = ["jsonrpc": "2.0", "result": result]
+        resp["id"] = id ?? NSNull()
+        return resp
+    }
+
+    private func jsonrpcError(id: Any?, code: Int, message: String, data: Any? = nil) -> [String: Any] {
+        var err: [String: Any] = ["code": code, "message": message]
+        if let data { err["data"] = data }
+        var resp: [String: Any] = ["jsonrpc": "2.0", "error": err]
+        resp["id"] = id ?? NSNull()
+        return resp
+    }
+
+    private func parseMaxDimension(_ raw: Any?, defaultValue: Int) -> Int {
+        guard let raw else { return defaultValue }
+        if let intVal = raw as? Int { return intVal }
+        if let dblVal = raw as? Double { return Int(dblVal) }
+        if let strVal = raw as? String {
+            switch strVal.lowercased() {
+            case "playwright", "default", "claude", "claudecode", "optimal", "recommended":
+                return ScreenAndInput.defaultMaxDimension
+            case "safe", "2000":
+                return ScreenAndInput.safeMaxDimension
+            case "max", "hard", "limit":
+                return ScreenAndInput.hardMaxDimension
+            case "full", "none", "0":
+                return 0
+            default:
+                return Int(strVal) ?? defaultValue
+            }
+        }
+        return defaultValue
+    }
+
+    private func parseResizeMode(_ raw: Any?, defaultValue: ScreenAndInput.ResizeMode) -> ScreenAndInput.ResizeMode {
+        guard let s = raw as? String else { return defaultValue }
+        switch s.lowercased() {
+        case "crop":
+            return .crop
+        case "scale":
+            return .scale
+        default:
+            return defaultValue
+        }
+    }
+
+    private func parseXY(_ args: [String: Any]) throws -> (Double, Double, ScreenAndInput.CoordinateSpace) {
+        guard let x = doubleValue(args["x"]), let y = doubleValue(args["y"]) else {
+            throw MCPToolError("expected {x,y}")
+        }
+        let space = ScreenAndInput.CoordinateSpace.parse(args["space"])
+        return (x, y, space)
+    }
+
+    private func parseWindowTarget(_ args: [String: Any]) -> (CGWindowID?, pid_t?, String?, String?) {
+        let windowID = intValue(args["window_id"]).map { CGWindowID($0) }
+        let pid = intValue(args["pid"]).map { pid_t($0) }
+        let app = args["app"] as? String
+        let title = args["title"] as? String
+        return (windowID, pid, app, title)
+    }
+
+    private func intValue(_ raw: Any?) -> Int? {
+        if let i = raw as? Int { return i }
+        if let d = raw as? Double { return Int(d) }
+        if let s = raw as? String { return Int(s) }
+        return nil
+    }
+
+    private func doubleValue(_ raw: Any?) -> Double? {
+        if let d = raw as? Double { return d }
+        if let i = raw as? Int { return Double(i) }
+        if let s = raw as? String { return Double(s) }
+        return nil
+    }
+
+    private struct MCPToolError: Error {
+        let message: String
+        init(_ message: String) { self.message = message }
+    }
 }
 
 // MARK: - HTTP parsing (minimal)
@@ -823,6 +1526,16 @@ struct HTTPResponse {
         return HTTPResponse(status: status, headers: ["Content-Type": "application/json"], body: data)
     }
 
+    static func jsonAny(_ status: Int, _ obj: Any) -> HTTPResponse {
+        let data: Data
+        if JSONSerialization.isValidJSONObject(obj) {
+            data = (try? JSONSerialization.data(withJSONObject: obj, options: [])) ?? Data()
+        } else {
+            data = Data()
+        }
+        return HTTPResponse(status: status, headers: ["Content-Type": "application/json"], body: data)
+    }
+
     static func text(_ status: Int, _ text: String) -> HTTPResponse {
         return HTTPResponse(status: status, headers: ["Content-Type": "text/plain; charset=utf-8"], body: Data(text.utf8))
     }
@@ -835,10 +1548,13 @@ struct HTTPResponse {
 private func statusText(_ code: Int) -> String {
     switch code {
     case 200: return "OK"
+    case 202: return "Accepted"
+    case 204: return "No Content"
     case 400: return "Bad Request"
     case 401: return "Unauthorized"
     case 403: return "Forbidden"
     case 404: return "Not Found"
+    case 405: return "Method Not Allowed"
     default: return "Error"
     }
 }

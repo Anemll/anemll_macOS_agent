@@ -44,21 +44,11 @@ final class HostViewModel: ObservableObject {
 
     @Published var showCursorOverlay: Bool = true {
         didSet {
-            if showCursorOverlay {
-                cursorOverlay.start()
-                lastStatus = "Cursor overlay enabled"
-            } else {
-                cursorOverlay.stop()
-                lastStatus = "Cursor overlay disabled"
-            }
+            updateCursorOverlayStatus()
         }
     }
 
     init() {
-        if showCursorOverlay {
-            cursorOverlay.start()
-            lastStatus = "Cursor overlay enabled"
-        }
         // Check permissions on startup (inline to avoid MainActor isolation issue in init)
         screenCaptureAllowed = CGPreflightScreenCaptureAccess()
         accessibilityAllowed = AXIsProcessTrusted()
@@ -154,6 +144,7 @@ final class HostViewModel: ObservableObject {
             try s.start()
             server = s
             serverRunning = true
+            updateCursorOverlayStatus()
             lastStatus = "Starting server..."
         } catch {
             serverRunning = false
@@ -171,7 +162,22 @@ final class HostViewModel: ObservableObject {
         server?.stop()
         server = nil
         serverRunning = false
+        updateCursorOverlayStatus()
         lastStatus = "Server stopped"
+    }
+
+    private func updateCursorOverlayStatus() {
+        if serverRunning && showCursorOverlay {
+            cursorOverlay.start()
+            lastStatus = "Cursor overlay enabled"
+        } else {
+            cursorOverlay.stop()
+            if showCursorOverlay && !serverRunning {
+                lastStatus = "Cursor overlay paused (server stopped)"
+            } else {
+                lastStatus = "Cursor overlay disabled"
+            }
+        }
     }
 
     func refreshPermissions() {

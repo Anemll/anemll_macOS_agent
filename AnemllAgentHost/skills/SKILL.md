@@ -40,7 +40,7 @@ export ANEMLL_HOST="http://127.0.0.1:8765"
 export ANEMLL_TOKEN="PASTE_TOKEN_FROM_MENU_APP"
 ```
 
-**Important**: The HTTP server is localhost only. Commands must run on the same Mac that is running AnemllAgentHost.
+**Important**: The HTTP server is localhost only. Commands must run on the same Mac that is running AnemllAgentHost. This includes the MCP JSON-RPC endpoint (`/mcp`).
 
 ## API Reference
 

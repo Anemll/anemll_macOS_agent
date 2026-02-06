@@ -14,6 +14,24 @@ This document contains instructions for Claude Code agents to interact with the 
 
 Important: The HTTP server is localhost only. Commands must run on the same Mac that is running AnemllAgentHost. If Claude is on another machine, SSH into the target Mac and run curl there.
 
+## MCP endpoint (Xcode / Copilot / other clients)
+
+The server also exposes an MCP JSON-RPC endpoint at:
+
+- `POST http://127.0.0.1:8765/mcp`
+
+Authentication is the same Bearer token (`Authorization: Bearer $ANEMLL_TOKEN`). If your MCP client can’t set headers, you can also use a query param: `http://127.0.0.1:8765/mcp?token=PASTE_TOKEN`.
+
+Quick check (list tools):
+
+```sh
+curl -s \
+  -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/mcp" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | python3 -m json.tool
+```
+
 Optional: Turn on "Show Cursor Overlay" in the menu app UI to draw a small red ring at the current cursor location. This makes the cursor visible in screenshots for alignment/debugging.
 
 ## Claude Code permissions (avoid repeated bash prompts)

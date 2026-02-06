@@ -46,7 +46,8 @@ enum ScreenAndInput {
         path: String = "/tmp/anemll_last.png",
         includeCursor: Bool = true,
         maxDimension: Int = 0,
-        resizeMode: ResizeMode = .scale
+        resizeMode: ResizeMode = .scale,
+        returnBase64: Bool = false
     ) throws -> [String: Any] {
         guard CGPreflightScreenCaptureAccess() else {
             throw Err.screenCaptureNotAllowed
@@ -109,6 +110,9 @@ enum ScreenAndInput {
             "h": finalImage.height,
             "ts": Int(Date().timeIntervalSince1970)
         ]
+        if returnBase64, let base64 = imageToBase64(cgImage: finalImage) {
+            info["image_base64"] = base64
+        }
         if let resize = resizeInfo {
             info["resized"] = true
             info["resize_mode"] = resize["mode"]

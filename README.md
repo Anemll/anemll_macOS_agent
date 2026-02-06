@@ -4,6 +4,24 @@
 
 This repo contains a minimal macOS menu bar app (AnemllAgentHost) that exposes a localhost HTTP API for UI automation (screenshot, click, type). The instructions below are formatted for Claude Code/Codex to use the service via SSH + curl.
 
+## MCP (Model Context Protocol) endpoint
+
+The same localhost server also exposes an MCP JSON-RPC endpoint (Streamable HTTP style) at:
+
+- `POST http://127.0.0.1:8765/mcp`
+
+Auth is the same as the REST endpoints: `Authorization: Bearer $ANEMLL_TOKEN` (or `?token=...` if your MCP client can’t set headers).
+
+Quick sanity check (list tools):
+
+```bash
+curl -s \
+  -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "$ANEMLL_HOST/mcp" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
+
 ## Base64-first Capture (Recommended)
 
 For fastest agent loops, request **inline base64 images** to avoid extra file reads:
