@@ -1,0 +1,69 @@
+AnemllAgentHost is a menu bar utility that lets AI coding assistants automate your Mac's UI. It runs a localhost-only HTTP server so tools like Claude Code and Codex can take screenshots, click elements, type text, and interact with application windows — all on the same machine.
+
+WHAT IT DOES
+
+- Runs a local HTTP API on 127.0.0.1:8765 for AI-driven UI automation
+- Takes full-screen or per-window screenshots
+- Clicks, double-clicks, right-clicks at screen or window coordinates
+- Types text into any focused control
+- Lists and captures specific application windows
+- Supports MCP (Model Context Protocol) JSON-RPC for tool integrations
+- Includes a browser-based debug viewer for live capture monitoring
+
+HOW IT WORKS
+
+1. Launch the app — it appears as a menu bar icon
+2. Grant Screen Recording and Accessibility permissions via the onboarding wizard
+3. The server starts automatically and generates a Bearer token
+4. AI assistants connect via localhost HTTP using the token
+
+The menu bar icon shows server status: monochrome when stopped, full-color when running.
+
+KEY FEATURES
+
+Menu Bar UI:
+- Start/Stop server with one click
+- Copy Bearer token or Debug URL to clipboard
+- Rotate token for security
+- Toggle cursor overlay (red ring visible in screenshots)
+- Install skill files for Claude Code and Codex
+- Reset permissions and restart from the gear menu
+
+REST API Endpoints:
+- /health — server status check
+- /screenshot — full-screen capture
+- /mouse — current cursor position
+- /click, /double_click, /right_click — click at coordinates
+- /move — move cursor
+- /scroll — scroll by pixel offset
+- /type — type text into focused control
+- /windows — list visible windows with bounds
+- /capture — capture a specific window by app name, title, PID, or window ID
+- /click_window, /focus, /scroll_window — interact within a window
+- /burst — rapid multi-frame capture
+- /calibrate — OCR-based coordinate calibration
+- /debug — browser-based live capture viewer
+
+MCP Endpoint:
+- POST /mcp — full JSON-RPC 2.0 MCP server with tools for screenshot, click, type, window capture, and more
+
+SECURITY
+
+- Localhost only: binds to 127.0.0.1, rejects remote connections
+- Bearer token authentication on every request (auto-generated UUID)
+- No outbound network connections
+- No telemetry, analytics, or data collection
+- Screenshots written to /tmp/ and overwritten each capture
+
+PERMISSIONS REQUIRED
+
+- Screen Recording: for taking screenshots and window captures
+- Accessibility: for simulating mouse clicks and keyboard input
+
+Both permissions are requested through an onboarding wizard on first launch. The app guides you to System Settings to enable each one.
+
+DESIGNED FOR DEVELOPERS
+
+AnemllAgentHost bridges AI coding assistants and the macOS desktop. Use it to build automated testing workflows, UI verification pipelines, or AI agent loops that observe and interact with any application on your Mac.
+
+Requires macOS 14.0 (Sonoma) or later.

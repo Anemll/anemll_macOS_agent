@@ -205,10 +205,22 @@ final class HostViewModel: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
 
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(opts)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.refreshPermissions()
-            self?.lastStatus = "Accessibility: respond to the macOS permission dialog"
+        let trusted = AXIsProcessTrustedWithOptions(opts)
+
+        // If the system prompt didn't appear (sandbox or tccutil reset), open Settings directly
+        if !trusted {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                guard let self else { return }
+                self.refreshPermissions()
+                if !self.accessibilityAllowed {
+                    self.openSystemSettingsAccessibility()
+                    self.lastStatus = "Accessibility: enable AnemllAgentHost in System Settings"
+                }
+            }
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.refreshPermissions()
+            }
         }
     }
 

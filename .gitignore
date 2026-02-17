@@ -11,3 +11,10 @@ xcuserdata/
 .build/
 Packages/
 *.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Packaging artifacts
+*.dmg
+*.zip
+dmg-staging/
+dmg_background.png
+AnemllAgentHost.app/

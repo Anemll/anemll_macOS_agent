@@ -22,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "Anemll Agent Host")
+            button.image = makeStatusBarIcon(isRunning: false)
             button.action = #selector(togglePopover(_:))
             button.target = self
         }
@@ -91,19 +91,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func makeStatusBarIcon(isRunning: Bool) -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: true) { rect in
+            let color: NSColor = isRunning ? .systemGreen : NSColor(white: 0.78, alpha: 1.0)
+            color.setFill()
+            color.setStroke()
+
+            let pad: CGFloat = 1
+            let w = rect.width - pad * 2
+            let h = rect.height - pad * 2
+
+            // Antenna
+            let antennaX = pad + w / 2
+            let antennaTop = pad + h * 0.02
+            let antennaBot = pad + h * 0.22
+            let antennaPath = NSBezierPath()
+            antennaPath.lineWidth = 1.4
+            antennaPath.move(to: NSPoint(x: antennaX, y: antennaBot))
+            antennaPath.line(to: NSPoint(x: antennaX, y: antennaTop))
+            antennaPath.stroke()
+            // Antenna ball
+            let ballR: CGFloat = 1.5
+            NSBezierPath(ovalIn: NSRect(x: antennaX - ballR, y: antennaTop - ballR, width: ballR * 2, height: ballR * 2)).fill()
+
+            // Head (rounded rect)
+            let headY = pad + h * 0.22
+            let headH = h * 0.50
+            let headRect = NSRect(x: pad + w * 0.12, y: headY, width: w * 0.76, height: headH)
+            let headPath = NSBezierPath(roundedRect: headRect, xRadius: 3, yRadius: 3)
+            headPath.lineWidth = 1.4
+            headPath.stroke()
+
+            // Eyes
+            let eyeY = headY + headH * 0.35
+            let eyeW: CGFloat = 2.8
+            let eyeH: CGFloat = 2.8
+            let leftEyeX = pad + w * 0.30
+            let rightEyeX = pad + w * 0.70 - eyeW
+            NSBezierPath(ovalIn: NSRect(x: leftEyeX, y: eyeY, width: eyeW, height: eyeH)).fill()
+            NSBezierPath(ovalIn: NSRect(x: rightEyeX, y: eyeY, width: eyeW, height: eyeH)).fill()
+
+            // Mouth
+            let mouthY = headY + headH * 0.68
+            let mouthPath = NSBezierPath()
+            mouthPath.lineWidth = 1.2
+            mouthPath.move(to: NSPoint(x: pad + w * 0.35, y: mouthY))
+            mouthPath.line(to: NSPoint(x: pad + w * 0.65, y: mouthY))
+            mouthPath.stroke()
+
+            // Ears (small rects on sides)
+            let earW: CGFloat = 2.0
+            let earH: CGFloat = 4.0
+            let earY = headY + headH * 0.3
+            NSBezierPath(roundedRect: NSRect(x: pad + w * 0.05, y: earY, width: earW, height: earH), xRadius: 0.8, yRadius: 0.8).fill()
+            NSBezierPath(roundedRect: NSRect(x: pad + w * 0.95 - earW, y: earY, width: earW, height: earH), xRadius: 0.8, yRadius: 0.8).fill()
+
+            // Body (smaller rounded rect below head)
+            let bodyY = headY + headH + h * 0.04
+            let bodyH = h * 0.22
+            let bodyRect = NSRect(x: pad + w * 0.22, y: bodyY, width: w * 0.56, height: bodyH)
+            let bodyPath = NSBezierPath(roundedRect: bodyRect, xRadius: 2, yRadius: 2)
+            bodyPath.lineWidth = 1.2
+            bodyPath.stroke()
+
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
     private func updateStatusIcon(isRunning: Bool) {
         guard let button = statusItem.button else { return }
-        let symbolName = "sparkles"
-        guard let baseImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Anemll Agent Host") else { return }
-
-        if isRunning {
-            // Create green-tinted version when server is running
-            let config = NSImage.SymbolConfiguration(paletteColors: [.systemGreen])
-            button.image = baseImage.withSymbolConfiguration(config)
-        } else {
-            // Default appearance when server is stopped
-            button.image = baseImage
-        }
+        button.image = makeStatusBarIcon(isRunning: isRunning)
     }
 }
 
