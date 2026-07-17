@@ -9,7 +9,7 @@ final class HostViewModel: ObservableObject {
     private static let serverPort: UInt16 = 8765
 
     @Published var serverRunning: Bool = false
-    @Published var token: String = UUID().uuidString
+    @Published var token: String = BearerToken.generate()
     @Published var lastStatus: String = "Idle"
 
     @Published var screenCaptureAllowed: Bool = false
@@ -22,8 +22,9 @@ final class HostViewModel: ObservableObject {
     // Skill sync
     @Published var skillNeedsSync: Bool = false
     @Published var bundledSkillVersion: String = ""
-    @Published var installedSkillVersion: String = ""
-    @Published var installedCodexSkillVersion: String = ""
+    @Published var installedAgentSkillVersions: [AgentPlatform: String] = [:]
+    @Published var isInstallingSkills: Bool = false
+    @Published var agentInstallResults: [AgentInstallResult] = []
 
     private var server: LocalHTTPServer?
     private let cursorOverlay = CursorOverlay()
@@ -38,17 +39,27 @@ final class HostViewModel: ObservableObject {
         components.host = Self.bindHost
         components.port = Int(Self.serverPort)
         components.path = "/debug"
-        components.queryItems = [URLQueryItem(name: "token", value: token)]
-        return components.url?.absoluteString ?? "http://\(Self.bindHost):\(Self.serverPort)/debug?token=\(token)"
+        components.fragment = "token=\(token)"
+        return components.url?.absoluteString ?? "http://\(Self.bindHost):\(Self.serverPort)/debug#token=\(token)"
     }
 
-    @Published var showCursorOverlay: Bool = true {
+    @Published var showCursorOverlay: Bool = false {
         didSet {
             updateCursorOverlayStatus()
         }
     }
 
     init() {
+#if DEBUG
+        // Deterministic credentials are available only to explicit local test launches.
+        let argumentToken = ProcessInfo.processInfo.arguments
+            .first(where: { $0.hasPrefix("--test-token=") })?
+            .dropFirst("--test-token=".count)
+        if let testToken = ProcessInfo.processInfo.environment["ANEMLL_TEST_TOKEN"]
+            ?? argumentToken.map(String.init), testToken.count >= 16 {
+            token = testToken
+        }
+#endif
         // Check permissions on startup (inline to avoid MainActor isolation issue in init)
         screenCaptureAllowed = CGPreflightScreenCaptureAccess()
         accessibilityAllowed = AXIsProcessTrusted()
@@ -74,28 +85,22 @@ final class HostViewModel: ObservableObject {
             }
         }
 
-        // Get installed skill versions (Claude + Codex)
-        let claudePath = NSHomeDirectory() + "/.claude/skills/anemll-macos-agent/SKILL.md"
-        if FileManager.default.fileExists(atPath: claudePath) {
-            installedSkillVersion = getSkillVersion(at: claudePath)
-        } else {
-            installedSkillVersion = "Not installed"
-        }
+        let homeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        var versions: [AgentPlatform: String] = [:]
+        var needsSync = false
+        for platform in AgentPlatform.allCases {
+            let skillURL = homeDirectory.appendingPathComponent(platform.skillRelativePath)
+            let isInstalled = FileManager.default.fileExists(atPath: skillURL.path)
+            let version = isInstalled ? getSkillVersion(at: skillURL.path) : "Not installed"
+            versions[platform] = version
 
-        let codexCustomPath = NSHomeDirectory() + "/.codex/skills/custom/anemll-macos-agent/SKILL.md"
-        let codexPath = NSHomeDirectory() + "/.codex/skills/anemll-macos-agent/SKILL.md"
-        if FileManager.default.fileExists(atPath: codexCustomPath) {
-            installedCodexSkillVersion = getSkillVersion(at: codexCustomPath)
-        } else if FileManager.default.fileExists(atPath: codexPath) {
-            installedCodexSkillVersion = getSkillVersion(at: codexPath)
-        } else {
-            installedCodexSkillVersion = "Not installed"
+            let shouldTrack = isInstalled || AgentIntegrationInstaller.isDetected(platform, homeDirectory: homeDirectory)
+            if shouldTrack && version != bundledSkillVersion {
+                needsSync = true
+            }
         }
-
-        // Check if sync needed (versions differ or not installed)
-        let needsClaudeSync = installedSkillVersion != bundledSkillVersion
-        let needsCodexSync = installedCodexSkillVersion != bundledSkillVersion
-        skillNeedsSync = (needsClaudeSync || needsCodexSync) && !bundledSkillVersion.isEmpty
+        installedAgentSkillVersions = versions
+        skillNeedsSync = needsSync && !bundledSkillVersion.isEmpty
     }
 
     private func checkOnboardingNeeded() {
@@ -125,7 +130,7 @@ final class HostViewModel: ObservableObject {
     }
 
     func rotateToken() {
-        token = UUID().uuidString
+        token = BearerToken.generate()
         server?.setBearerToken(token)
         lastStatus = "Rotated token"
     }
@@ -204,7 +209,9 @@ final class HostViewModel: ObservableObject {
         // Ensure the system permission dialog isn't hidden behind another app's window.
         NSApp.activate(ignoringOtherApps: true)
 
-        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        // The exported C symbol is mutable and therefore rejected by Swift 6 concurrency checks;
+        // the documented CFDictionary key has this stable raw value.
+        let opts = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         let trusted = AXIsProcessTrustedWithOptions(opts)
 
         // If the system prompt didn't appear (sandbox or tccutil reset), open Settings directly
@@ -238,13 +245,14 @@ final class HostViewModel: ObservableObject {
                     failures.append(service)
                 }
             }
+            let failedServices = failures
 
             await MainActor.run {
                 self.refreshPermissions()
-                if failures.isEmpty {
+                if failedServices.isEmpty {
                     self.lastStatus = "Reset permissions; quit and relaunch to re-grant"
                 } else {
-                    self.lastStatus = "Reset failed for: \(failures.joined(separator: ", "))"
+                    self.lastStatus = "Reset failed for: \(failedServices.joined(separator: ", "))"
                 }
             }
         }
@@ -319,7 +327,7 @@ final class HostViewModel: ObservableObject {
         guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
             return "unknown"
         }
-        // Look for version in the skill file (e.g., "v0.1.8")
+        // Look for the compatibility marker in the skill body (e.g., "AnemllAgentHost v0.2.1").
         if let range = content.range(of: #"AnemllAgentHost v[\d.]+"#, options: .regularExpression) {
             let match = String(content[range])
             return match.replacingOccurrences(of: "AnemllAgentHost ", with: "")
@@ -334,51 +342,56 @@ final class HostViewModel: ObservableObject {
         return "unknown"
     }
 
-    func syncSkill() {
-        // Copy bundled skill to user's Claude and Codex skills directories
-        let claudeDir = NSHomeDirectory() + "/.claude/skills/anemll-macos-agent"
-        let claudePath = claudeDir + "/SKILL.md"
-        let codexDir = NSHomeDirectory() + "/.codex/skills/custom/anemll-macos-agent"
-        let codexPath = codexDir + "/SKILL.md"
+    func isAgentDetected(_ platform: AgentPlatform) -> Bool {
+        AgentIntegrationInstaller.isDetected(
+            platform,
+            homeDirectory: URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        )
+    }
 
-        // Find bundled skill
-        var sourcePath: String?
-        if let path = Bundle.main.path(forResource: "SKILL", ofType: "md", inDirectory: "skills") {
-            sourcePath = path
-        } else {
-            let altPath = Bundle.main.bundlePath + "/Contents/Resources/skills/SKILL.md"
-            if FileManager.default.fileExists(atPath: altPath) {
-                sourcePath = altPath
-            }
-        }
-
-        guard let source = sourcePath else {
+    func installSkills(targets: Set<AgentPlatform>) {
+        guard !targets.isEmpty, !isInstallingSkills else { return }
+        guard let skillData = bundledSkillData() else {
             lastStatus = "Bundled skill not found"
             return
         }
 
-        do {
-            // Create directories if needed
-            try FileManager.default.createDirectory(atPath: claudeDir, withIntermediateDirectories: true)
-            try FileManager.default.createDirectory(atPath: codexDir, withIntermediateDirectories: true)
+        isInstallingSkills = true
+        agentInstallResults = []
+        lastStatus = "Installing skills and MCP tools..."
+        let homeDirectory = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
 
-            // Remove existing files
-            if FileManager.default.fileExists(atPath: claudePath) {
-                try FileManager.default.removeItem(atPath: claudePath)
+        Task {
+            let results = await Task.detached(priority: .userInitiated) {
+                AgentIntegrationInstaller.install(
+                    platforms: targets,
+                    skillData: skillData,
+                    homeDirectory: homeDirectory
+                )
+            }.value
+
+            agentInstallResults = results
+            isInstallingSkills = false
+            checkSkillSync()
+
+            let failed = results.filter { $0.status == .failed }.count
+            let warnings = results.filter { $0.status == .warning }.count
+            if failed > 0 {
+                lastStatus = "Installed \(results.count - failed)/\(results.count) targets; \(failed) failed"
+            } else if warnings > 0 {
+                lastStatus = "Installed \(results.count) targets with \(warnings) warning(s)"
+            } else {
+                lastStatus = "Skills and MCP tools installed for \(results.count) target(s)"
             }
-            if FileManager.default.fileExists(atPath: codexPath) {
-                try FileManager.default.removeItem(atPath: codexPath)
-            }
-
-            // Copy new file
-            try FileManager.default.copyItem(atPath: source, toPath: claudePath)
-            try FileManager.default.copyItem(atPath: source, toPath: codexPath)
-
-            lastStatus = "Skill synced to Claude + Codex"
-            checkSkillSync()  // Refresh status
-        } catch {
-            lastStatus = "Skill sync failed: \(error.localizedDescription)"
         }
+    }
+
+    private func bundledSkillData() -> Data? {
+        if let path = Bundle.main.path(forResource: "SKILL", ofType: "md", inDirectory: "skills") {
+            return FileManager.default.contents(atPath: path)
+        }
+        let alternatePath = Bundle.main.bundlePath + "/Contents/Resources/skills/SKILL.md"
+        return FileManager.default.contents(atPath: alternatePath)
     }
 
     func openSystemSettingsPrivacy() {
@@ -428,60 +441,6 @@ final class HostViewModel: ObservableObject {
         } catch {
             lastStatus = "Failed to update CLAUDE.md: \(error.localizedDescription)"
             return false
-        }
-    }
-
-    // MARK: - Install Skills (to Claude & Codex directories only)
-
-    func install() {
-        var results: [String] = []
-
-        // Install skill to both Claude and Codex skill directories
-        // NOTE: Does NOT modify CLAUDE.md to keep user settings safe
-        let claudeDir = NSHomeDirectory() + "/.claude/skills/anemll-macos-agent"
-        let claudePath = claudeDir + "/SKILL.md"
-        let codexDir = NSHomeDirectory() + "/.codex/skills/custom/anemll-macos-agent"
-        let codexPath = codexDir + "/SKILL.md"
-
-        // Find bundled skill
-        var sourcePath: String?
-        if let path = Bundle.main.path(forResource: "SKILL", ofType: "md", inDirectory: "skills") {
-            sourcePath = path
-        } else {
-            let altPath = Bundle.main.bundlePath + "/Contents/Resources/skills/SKILL.md"
-            if FileManager.default.fileExists(atPath: altPath) {
-                sourcePath = altPath
-            }
-        }
-
-        if let source = sourcePath {
-            do {
-                // Create directories if needed
-                try FileManager.default.createDirectory(atPath: claudeDir, withIntermediateDirectories: true)
-                try FileManager.default.createDirectory(atPath: codexDir, withIntermediateDirectories: true)
-
-                // Remove existing files and copy new
-                if FileManager.default.fileExists(atPath: claudePath) {
-                    try FileManager.default.removeItem(atPath: claudePath)
-                }
-                try FileManager.default.copyItem(atPath: source, toPath: claudePath)
-                results.append("Claude")
-
-                if FileManager.default.fileExists(atPath: codexPath) {
-                    try FileManager.default.removeItem(atPath: codexPath)
-                }
-                try FileManager.default.copyItem(atPath: source, toPath: codexPath)
-                results.append("Codex")
-            } catch {
-                lastStatus = "Skill install failed: \(error.localizedDescription)"
-            }
-        }
-
-        if results.isEmpty {
-            lastStatus = "Install failed"
-        } else {
-            lastStatus = "Skills installed: \(results.joined(separator: " + "))"
-            checkSkillSync()  // Refresh status
         }
     }
 

@@ -6,6 +6,17 @@ import UniformTypeIdentifiers
 import Vision
 
 enum ScreenAndInput {
+    struct ApplicationActivation: Sendable {
+        let ok: Bool
+        let pid: Int
+        let app: String
+        let bundleID: String
+
+        var dictionary: [String: Any] {
+            ["ok": ok, "pid": pid, "app": app, "bundle_id": bundleID]
+        }
+    }
+
     enum Err: Error { case screenCaptureNotAllowed; case captureFailed; case writeFailed; case windowNotFound }
     enum CoordinateSpace: String {
         case screenPoints
@@ -36,37 +47,75 @@ enum ScreenAndInput {
         }
     }
 
-    private static var lastCaptureScale: Double?
-    private static var lastCaptureBounds: CGRect?
+    private final class CoordinateMappingState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var geometry: CaptureGeometry?
+
+        func update(_ value: CaptureGeometry) {
+            lock.withLock { geometry = value }
+        }
+
+        func snapshot() -> CaptureGeometry? {
+            lock.withLock { geometry }
+        }
+    }
+
+    private actor PasteCoordinator {
+        func perform(text: String) async -> Bool {
+            let previousText = await MainActor.run { NSPasteboard.general.string(forType: .string) }
+            await MainActor.run {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+            }
+
+            let pasted = ScreenAndInput.hotkey(keys: ["command", "v"])
+            if pasted { try? await Task.sleep(for: .milliseconds(150)) }
+
+            await MainActor.run {
+                NSPasteboard.general.clearContents()
+                if let previousText {
+                    NSPasteboard.general.setString(previousText, forType: .string)
+                }
+            }
+            return pasted
+        }
+    }
+
+    private static let coordinateMappingState = CoordinateMappingState()
+    private static let pasteCoordinator = PasteCoordinator()
 
     // Writes /tmp/anemll_last.png and returns info JSON
     // maxDimension: if > 0, resizes image to keep largest dimension under this limit
     // resizeMode: .crop trims (keeps top-left if no cursor), .scale resizes proportionally
     static func takeScreenshot(
-        path: String = "/tmp/anemll_last.png",
+        path: String? = "/tmp/anemll_last.png",
         includeCursor: Bool = true,
         maxDimension: Int = 0,
         resizeMode: ResizeMode = .scale,
         returnBase64: Bool = false
-    ) throws -> [String: Any] {
+    ) async throws -> [String: Any] {
+        let startedAt = CFAbsoluteTimeGetCurrent()
         guard CGPreflightScreenCaptureAccess() else {
             throw Err.screenCaptureNotAllowed
         }
 
-        // Capture main display (use .optionOnScreenOnly for speed)
-        let image = CGWindowListCreateImage(.infinite,
-                                            .optionOnScreenOnly,
-                                            kCGNullWindowID,
-                                            [.bestResolution])
-        guard let cgImage = image else {
-            throw Err.captureFailed
+        let cgImage: CGImage
+        if #available(macOS 14.0, *) {
+            cgImage = try await ScreenCaptureBackend.shared.captureMainDisplay()
+        } else {
+            let displayBounds = CGDisplayBounds(CGMainDisplayID())
+            guard let legacyImage = CGWindowListCreateImage(
+                displayBounds,
+                .optionOnScreenOnly,
+                kCGNullWindowID,
+                [.bestResolution]
+            ) else {
+                throw Err.captureFailed
+            }
+            cgImage = legacyImage
         }
 
         let display = mainDisplayInfo()
-        if let display {
-            updateLastCaptureScale(pixelWidth: cgImage.width, pixelHeight: cgImage.height, display: display)
-        }
-
         let baseImage: CGImage
         if includeCursor, let withCursor = drawCursorOverlay(on: cgImage) {
             baseImage = withCursor
@@ -102,16 +151,26 @@ enum ScreenAndInput {
             finalImage = baseImage
         }
 
-        try writePNG(cgImage: finalImage, to: URL(fileURLWithPath: path))
+        let capturedAt = CFAbsoluteTimeGetCurrent()
+        let encodedImage = try pngData(cgImage: finalImage)
+        let encodedAt = CFAbsoluteTimeGetCurrent()
+        if let path {
+            try writeImageData(encodedImage, to: URL(fileURLWithPath: path))
+        }
         var info: [String: Any] = [
             "ok": true,
-            "path": path,
             "w": finalImage.width,
             "h": finalImage.height,
-            "ts": Int(Date().timeIntervalSince1970)
+            "ts": Int(Date().timeIntervalSince1970),
+            "capture_ms": Int(((capturedAt - startedAt) * 1_000).rounded()),
+            "encode_ms": Int(((encodedAt - capturedAt) * 1_000).rounded()),
+            "total_ms": Int(((CFAbsoluteTimeGetCurrent() - startedAt) * 1_000).rounded())
         ]
-        if returnBase64, let base64 = imageToBase64(cgImage: finalImage) {
-            info["image_base64"] = base64
+        if let path {
+            info["path"] = path
+        }
+        if returnBase64 {
+            info["image_base64"] = encodedImage.base64EncodedString()
         }
         if let resize = resizeInfo {
             info["resized"] = true
@@ -124,6 +183,19 @@ enum ScreenAndInput {
         }
         if let display {
             let scale = effectiveScale(display: display)
+            let trimOrigin = CGPoint(
+                x: (resizeInfo?["trim_x"] as? Int).map { CGFloat($0) } ?? 0,
+                y: (resizeInfo?["trim_y"] as? Int).map { CGFloat($0) } ?? 0
+            )
+            let outputScale = (resizeInfo?["scale"] as? Double).map { CGFloat($0) } ?? 1
+            let geometry = CaptureGeometry(
+                windowBounds: display.bounds,
+                originalPixelSize: CGSize(width: baseImage.width, height: baseImage.height),
+                outputPixelSize: CGSize(width: finalImage.width, height: finalImage.height),
+                trimOrigin: trimOrigin,
+                outputScale: outputScale
+            )
+            coordinateMappingState.update(geometry)
             info["screen_w"] = Double(display.bounds.width)
             info["screen_h"] = Double(display.bounds.height)
             info["screen_x"] = Double(display.bounds.origin.x)
@@ -131,6 +203,8 @@ enum ScreenAndInput {
             info["screen_scale"] = Double(scale)
             info["screen_pixel_w"] = Int(round(Double(display.bounds.width) * scale))
             info["screen_pixel_h"] = Int(round(Double(display.bounds.height) * scale))
+            info["image_scale_x"] = Double(geometry.sourcePixelsPerPoint.x * outputScale)
+            info["image_scale_y"] = Double(geometry.sourcePixelsPerPoint.y * outputScale)
         }
         return info
     }
@@ -217,13 +291,23 @@ enum ScreenAndInput {
     }
 
     static func imageLocation(fromScreen point: CGPoint) -> CGPoint? {
-        guard let display = mainDisplayInfo() else { return nil }
-        let scale = effectiveScale(display: display)
-        if scale <= 0 { return nil }
+        if let geometry = coordinateMappingState.snapshot() {
+            let pixelsPerPoint = geometry.sourcePixelsPerPoint
+            let source = CGPoint(
+                x: (point.x - geometry.windowBounds.origin.x) * pixelsPerPoint.x,
+                y: (point.y - geometry.windowBounds.origin.y) * pixelsPerPoint.y
+            )
+            return CGPoint(
+                x: (source.x - geometry.trimOrigin.x) * geometry.outputScale,
+                y: (source.y - geometry.trimOrigin.y) * geometry.outputScale
+            )
+        }
 
-        let xPx = (Double(point.x) - Double(display.bounds.origin.x)) * scale
-        let yPx = (Double(display.bounds.height) - (Double(point.y) - Double(display.bounds.origin.y))) * scale
-        return CGPoint(x: xPx, y: yPx)
+        guard let display = mainDisplayInfo() else { return nil }
+        return CGPoint(
+            x: (point.x - display.bounds.origin.x) * display.scale,
+            y: (point.y - display.bounds.origin.y) * display.scale
+        )
     }
 
     static func type(text: String) -> Bool {
@@ -256,26 +340,151 @@ enum ScreenAndInput {
         return true
     }
 
-    private static func writePNG(cgImage: CGImage, to url: URL) throws {
-        // Write atomically to avoid readers seeing partial PNGs.
-        let tmpURL = URL(fileURLWithPath: url.path + ".tmp")
-        guard let dest = CGImageDestinationCreateWithURL(tmpURL as CFURL,
-                                                         UTType.png.identifier as CFString,
-                                                         1,
-                                                         nil)
+    /// Paste is substantially faster and more reliable than per-scalar key injection for long text.
+    /// The previous plain-text clipboard value is restored after the target receives Command-V.
+    static func paste(text: String) async -> Bool {
+        await pasteCoordinator.perform(text: text)
+    }
+
+    static func hotkey(keys: [String]) -> Bool {
+        guard !keys.isEmpty else { return false }
+        var flags: CGEventFlags = []
+        var keyName: String?
+
+        for raw in keys {
+            switch raw.lowercased().replacingOccurrences(of: "-", with: "") {
+            case "command", "cmd", "meta": flags.insert(.maskCommand)
+            case "shift": flags.insert(.maskShift)
+            case "option", "alt": flags.insert(.maskAlternate)
+            case "control", "ctrl": flags.insert(.maskControl)
+            case "function", "fn": flags.insert(.maskSecondaryFn)
+            default:
+                guard keyName == nil else { return false }
+                keyName = raw
+            }
+        }
+
+        guard let keyName, let code = keyCode(for: keyName),
+              let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
+              let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false)
+        else { return false }
+
+        down.flags = flags
+        up.flags = flags
+        down.post(tap: .cghidEventTap)
+        usleep(10_000)
+        up.post(tap: .cghidEventTap)
+        return true
+    }
+
+    static func drag(
+        fromX: Double,
+        fromY: Double,
+        toX: Double,
+        toY: Double,
+        space: CoordinateSpace = .screenPoints,
+        durationMs: Int = 350
+    ) async -> Bool {
+        guard let start = screenPoint(x: fromX, y: fromY, space: space),
+              let end = screenPoint(x: toX, y: toY, space: space),
+              let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left),
+              let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left)
+        else { return false }
+
+        _ = move(x: fromX, y: fromY, space: space)
+        down.post(tap: .cghidEventTap)
+        let boundedDuration = min(max(durationMs, 50), 10_000)
+        let steps = min(max(boundedDuration / 16, 4), 240)
+
+        var completed = true
+        for step in 1...steps {
+            let progress = CGFloat(step) / CGFloat(steps)
+            let point = CGPoint(
+                x: start.x + (end.x - start.x) * progress,
+                y: start.y + (end.y - start.y) * progress
+            )
+            guard let event = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: point, mouseButton: .left) else {
+                completed = false
+                break
+            }
+            event.post(tap: .cghidEventTap)
+            try? await Task.sleep(for: .milliseconds(boundedDuration / steps))
+        }
+
+        up.post(tap: .cghidEventTap)
+        return completed
+    }
+
+    @MainActor
+    static func activate(app: String) -> ApplicationActivation? {
+        guard !app.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        guard let target = NSWorkspace.shared.runningApplications.first(where: {
+            ($0.localizedName ?? "").localizedCaseInsensitiveContains(app)
+            || ($0.bundleIdentifier ?? "").localizedCaseInsensitiveContains(app)
+        }) else { return nil }
+
+        target.unhide()
+        let activated = target.activate(options: [.activateAllWindows])
+        return ApplicationActivation(
+            ok: activated,
+            pid: Int(target.processIdentifier),
+            app: target.localizedName ?? "",
+            bundleID: target.bundleIdentifier ?? ""
+        )
+    }
+
+    private static func keyCode(for raw: String) -> CGKeyCode? {
+        let key = raw.lowercased().replacingOccurrences(of: "_", with: "")
+        let codes: [String: CGKeyCode] = [
+            "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9,
+            "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17,
+            "1": 18, "2": 19, "3": 20, "4": 21, "6": 22, "5": 23, "=": 24, "9": 25, "7": 26,
+            "-": 27, "8": 28, "0": 29, "]": 30, "o": 31, "u": 32, "[": 33, "i": 34, "p": 35,
+            "enter": 36, "return": 36, "l": 37, "j": 38, "'": 39, "k": 40, ";": 41, "\\": 42,
+            ",": 43, "/": 44, "n": 45, "m": 46, ".": 47, "tab": 48, "space": 49, "`": 50,
+            "delete": 51, "backspace": 51, "escape": 53, "esc": 53,
+            "left": 123, "right": 124, "down": 125, "up": 126,
+            "home": 115, "end": 119, "pageup": 116, "pagedown": 121,
+            "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
+            "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111
+        ]
+        return codes[key]
+    }
+
+    private static func pngData(cgImage: CGImage) throws -> Data {
+        let mutableData = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            mutableData,
+            UTType.png.identifier as CFString,
+            1,
+            nil
+        )
         else { throw Err.writeFailed }
 
-        CGImageDestinationAddImage(dest, cgImage, nil)
-        if !CGImageDestinationFinalize(dest) {
-            throw Err.writeFailed
-        }
+        CGImageDestinationAddImage(destination, cgImage, nil)
+        guard CGImageDestinationFinalize(destination) else { throw Err.writeFailed }
+        return mutableData as Data
+    }
+
+    private static func writeImageData(_ data: Data, to url: URL) throws {
+        // Use a per-request temporary path so concurrent captures cannot corrupt each other.
+        let tmpURL = URL(fileURLWithPath: url.path + ".\(UUID().uuidString).tmp")
+        try data.write(to: tmpURL, options: .atomic)
 
         guard isValidPNG(at: tmpURL) else {
             try? FileManager.default.removeItem(at: tmpURL)
             throw Err.writeFailed
         }
 
-        _ = try FileManager.default.replaceItemAt(url, withItemAt: tmpURL)
+        if FileManager.default.fileExists(atPath: url.path) {
+            _ = try FileManager.default.replaceItemAt(url, withItemAt: tmpURL)
+        } else {
+            try FileManager.default.moveItem(at: tmpURL, to: url)
+        }
+    }
+
+    private static func writePNG(cgImage: CGImage, to url: URL) throws {
+        try writeImageData(pngData(cgImage: cgImage), to: url)
     }
 
     private static func isValidPNG(at url: URL) -> Bool {
@@ -293,15 +502,7 @@ enum ScreenAndInput {
 
     /// Encodes a CGImage to PNG base64 string
     static func imageToBase64(cgImage: CGImage) -> String? {
-        let mutableData = NSMutableData()
-        guard let dest = CGImageDestinationCreateWithData(mutableData, UTType.png.identifier as CFString, 1, nil) else {
-            return nil
-        }
-        CGImageDestinationAddImage(dest, cgImage, nil)
-        guard CGImageDestinationFinalize(dest) else {
-            return nil
-        }
-        return (mutableData as Data).base64EncodedString()
+        try? pngData(cgImage: cgImage).base64EncodedString()
     }
 
     // MARK: - OCR using Vision framework
@@ -394,12 +595,11 @@ enum ScreenAndInput {
 
         ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
-        guard let mousePt = mouseLocation(),
-              let imgPt = imageLocation(fromScreen: mousePt)
+        guard let mousePt = mouseLocation(), let display = mainDisplayInfo()
         else { return ctx.makeImage() }
 
-        let x = CGFloat(imgPt.x)
-        let y = CGFloat(imgPt.y)
+        let x = (mousePt.x - display.bounds.origin.x) * CGFloat(width) / display.bounds.width
+        let y = (mousePt.y - display.bounds.origin.y) * CGFloat(height) / display.bounds.height
         let yFlip = CGFloat(height) - y
 
         let radius: CGFloat = 12
@@ -487,49 +687,18 @@ enum ScreenAndInput {
         return ctx.makeImage()
     }
 
-    private static func updateLastCaptureScale(pixelWidth: Int, pixelHeight: Int, display: DisplayInfo) {
-        let w = Double(display.bounds.width)
-        let h = Double(display.bounds.height)
-        guard w > 0, h > 0 else { return }
-
-        let sx = Double(pixelWidth) / w
-        let sy = Double(pixelHeight) / h
-        let scale = normalizedScale(sx, sy)
-        guard scale > 0.1, scale < 10 else { return }
-
-        lastCaptureScale = scale
-        lastCaptureBounds = display.bounds
-    }
-
     private static func effectiveScale(display: DisplayInfo) -> Double {
-        if let lastScale = lastCaptureScale,
-           let lastBounds = lastCaptureBounds,
-           abs(lastBounds.width - display.bounds.width) < 0.5,
-           abs(lastBounds.height - display.bounds.height) < 0.5,
-           lastScale > 0.1, lastScale < 10 {
-            return lastScale
-        }
-
-        if let backing = NSScreen.main?.backingScaleFactor, backing > 0 {
-            return Double(backing)
-        }
-
         return Double(display.scale)
-    }
-
-    private static func normalizedScale(_ sx: Double, _ sy: Double) -> Double {
-        guard sx.isFinite, sy.isFinite, sx > 0, sy > 0 else { return 0 }
-        if abs(sx - sy) <= 0.05 {
-            return (sx + sy) / 2.0
-        }
-        return 0
     }
 
     private static func mainDisplayInfo() -> DisplayInfo? {
         let id = CGMainDisplayID()
         let bounds = CGDisplayBounds(id)
-        let pixelWidth = Int(CGDisplayPixelsWide(id))
-        let pixelHeight = Int(CGDisplayPixelsHigh(id))
+        // CGDisplayPixelsWide/High can report the logical mode size on a Retina display.
+        // pixelWidth/pixelHeight preserve the physical backing resolution used by ScreenCaptureKit.
+        let mode = CGDisplayCopyDisplayMode(id)
+        let pixelWidth = mode?.pixelWidth ?? Int(CGDisplayPixelsWide(id))
+        let pixelHeight = mode?.pixelHeight ?? Int(CGDisplayPixelsHigh(id))
         return DisplayInfo(id: id, bounds: bounds, pixelWidth: pixelWidth, pixelHeight: pixelHeight)
     }
 
@@ -538,12 +707,19 @@ enum ScreenAndInput {
         case .screenPoints:
             return CGPoint(x: x, y: y)
         case .imagePixels:
+            if let geometry = coordinateMappingState.snapshot() {
+                let relative = geometry.windowPoint(fromOutputPixel: CGPoint(x: x, y: y))
+                return CGPoint(
+                    x: geometry.windowBounds.origin.x + relative.x,
+                    y: geometry.windowBounds.origin.y + relative.y
+                )
+            }
             guard let display = mainDisplayInfo() else { return nil }
             let scale = effectiveScale(display: display)
             if scale <= 0 { return nil }
 
             let xPt = x / scale + Double(display.bounds.origin.x)
-            let yPt = (Double(display.bounds.height) - (y / scale)) + Double(display.bounds.origin.y)
+            let yPt = y / scale + Double(display.bounds.origin.y)
             return CGPoint(x: xPt, y: yPt)
         }
     }
@@ -581,7 +757,8 @@ enum ScreenAndInput {
         resizeMode: ResizeMode = .crop,
         returnBase64: Bool = false,
         runOCR: Bool = false
-    ) throws -> [String: Any] {
+    ) async throws -> [String: Any] {
+        let startedAt = CFAbsoluteTimeGetCurrent()
         guard CGPreflightScreenCaptureAccess() else {
             throw Err.screenCaptureNotAllowed
         }
@@ -602,14 +779,19 @@ enum ScreenAndInput {
             windowBounds = nil
         }
 
-        // Capture the specific window
-        guard let cgImage = CGWindowListCreateImage(
-            .null,
-            .optionIncludingWindow,
-            targetWindowID,
-            [.bestResolution, .boundsIgnoreFraming]
-        ) else {
-            throw Err.captureFailed
+        let cgImage: CGImage
+        if #available(macOS 14.0, *) {
+            cgImage = try await ScreenCaptureBackend.shared.captureWindow(windowID: targetWindowID)
+        } else {
+            guard let legacyImage = CGWindowListCreateImage(
+                .null,
+                .optionIncludingWindow,
+                targetWindowID,
+                [.bestResolution, .boundsIgnoreFraming]
+            ) else {
+                throw Err.captureFailed
+            }
+            cgImage = legacyImage
         }
 
         // Apply cursor overlay if requested and cursor is within window bounds
@@ -618,11 +800,9 @@ enum ScreenAndInput {
 
         if includeCursor, let bounds = windowBounds {
             // Calculate cursor position in image coordinates for trimming
-            if let mousePt = mouseLocation(), let mainScreen = NSScreen.main {
-                let screenHeight = mainScreen.frame.height
-                let mouseYTopLeft = screenHeight - mousePt.y
+            if let mousePt = mouseLocation() {
                 let relativeX = mousePt.x - bounds.origin.x
-                let relativeY = mouseYTopLeft - bounds.origin.y
+                let relativeY = mousePt.y - bounds.origin.y
 
                 let scaleX = CGFloat(cgImage.width) / bounds.width
                 let scaleY = CGFloat(cgImage.height) / bounds.height
@@ -675,9 +855,13 @@ enum ScreenAndInput {
             finalImage = processedImage
         }
 
+        let capturedAt = CFAbsoluteTimeGetCurrent()
+        let encodedImage = try pngData(cgImage: finalImage)
+        let encodedAt = CFAbsoluteTimeGetCurrent()
+
         // Write to file if path is provided
         if let path = path {
-            try writePNG(cgImage: finalImage, to: URL(fileURLWithPath: path))
+            try writeImageData(encodedImage, to: URL(fileURLWithPath: path))
         }
 
         var info: [String: Any] = [
@@ -685,7 +869,9 @@ enum ScreenAndInput {
             "w": finalImage.width,
             "h": finalImage.height,
             "window_id": Int(targetWindowID),
-            "ts": Int(Date().timeIntervalSince1970)
+            "ts": Int(Date().timeIntervalSince1970),
+            "capture_ms": Int(((capturedAt - startedAt) * 1_000).rounded()),
+            "encode_ms": Int(((encodedAt - capturedAt) * 1_000).rounded())
         ]
 
         if let path = path {
@@ -718,21 +904,27 @@ enum ScreenAndInput {
 
         // Add base64 image if requested
         if returnBase64 {
-            if let base64 = imageToBase64(cgImage: finalImage) {
-                info["image_base64"] = base64
-            }
+            info["image_base64"] = encodedImage.base64EncodedString()
         }
 
         // Run OCR if requested
         if runOCR {
+            let ocrStartedAt = CFAbsoluteTimeGetCurrent()
             let ocrResults = performOCR(on: finalImage)
 
-            // Calculate scale factor for converting OCR pixel coords to window point coords
-            // OCR returns image pixels, but /click_window expects window points
-            var ocrScale: Double = 1.0
-            if let bounds = windowBounds {
-                // Scale is image pixels / window points
-                ocrScale = Double(finalImage.width) / Double(bounds.width)
+            let trimOrigin = CGPoint(
+                x: (resizeInfo?["trim_x"] as? Int).map { CGFloat($0) } ?? 0,
+                y: (resizeInfo?["trim_y"] as? Int).map { CGFloat($0) } ?? 0
+            )
+            let outputScale = (resizeInfo?["scale"] as? Double).map { CGFloat($0) } ?? 1
+            let geometry = windowBounds.map {
+                CaptureGeometry(
+                    windowBounds: $0,
+                    originalPixelSize: CGSize(width: cgImage.width, height: cgImage.height),
+                    outputPixelSize: CGSize(width: finalImage.width, height: finalImage.height),
+                    trimOrigin: trimOrigin,
+                    outputScale: outputScale
+                )
             }
 
             // Convert OCR results with scale-adjusted coordinates for clicking
@@ -743,18 +935,32 @@ enum ScreenAndInput {
                    let y = ocrDicts[i]["y"] as? Int,
                    let w = ocrDicts[i]["w"] as? Int,
                    let h = ocrDicts[i]["h"] as? Int {
-                    // Center of the text bounding box, converted to window points
-                    let centerX = Double(x) + Double(w) / 2.0
-                    let centerY = Double(y) + Double(h) / 2.0
-                    ocrDicts[i]["click_x"] = Int(centerX / ocrScale)
-                    ocrDicts[i]["click_y"] = Int(centerY / ocrScale)
+                    let center = CGPoint(
+                        x: Double(x) + Double(w) / 2.0,
+                        y: Double(y) + Double(h) / 2.0
+                    )
+                    if let geometry {
+                        let source = geometry.sourcePixel(fromOutputPixel: center)
+                        let windowPoint = geometry.windowPoint(fromOutputPixel: center)
+                        ocrDicts[i]["source_x"] = Int(source.x.rounded())
+                        ocrDicts[i]["source_y"] = Int(source.y.rounded())
+                        ocrDicts[i]["click_x"] = Int(windowPoint.x.rounded())
+                        ocrDicts[i]["click_y"] = Int(windowPoint.y.rounded())
+                    }
                 }
             }
 
             info["ocr"] = ocrDicts
             info["ocr_count"] = ocrResults.count
-            info["ocr_scale"] = ocrScale
+            if let pixelsPerPoint = geometry?.sourcePixelsPerPoint {
+                info["ocr_scale_x"] = Double(pixelsPerPoint.x)
+                info["ocr_scale_y"] = Double(pixelsPerPoint.y)
+                info["ocr_scale"] = Double(pixelsPerPoint.x)
+            }
+            info["ocr_ms"] = Int(((CFAbsoluteTimeGetCurrent() - ocrStartedAt) * 1_000).rounded())
         }
+
+        info["total_ms"] = Int(((CFAbsoluteTimeGetCurrent() - startedAt) * 1_000).rounded())
 
         return info
     }
@@ -900,7 +1106,7 @@ enum ScreenAndInput {
         maxDimension: Int = 0,
         resizeMode: ResizeMode = .crop,
         basePath: String = "/tmp/anemll_burst"
-    ) throws -> [String: Any] {
+    ) async throws -> [String: Any] {
         guard CGPreflightScreenCaptureAccess() else {
             throw Err.screenCaptureNotAllowed
         }
@@ -921,22 +1127,30 @@ enum ScreenAndInput {
         for i in 0..<count {
             let framePath = "\(basePath)_\(i).png"
 
-            // Capture frame
+            // Capture frame using the cached ScreenCaptureKit content graph on modern macOS.
             let cgImage: CGImage?
             if let winID = targetWindowID {
-                cgImage = CGWindowListCreateImage(
-                    .null,
-                    .optionIncludingWindow,
-                    winID,
-                    [.bestResolution, .boundsIgnoreFraming]
-                )
+                if #available(macOS 14.0, *) {
+                    cgImage = try? await ScreenCaptureBackend.shared.captureWindow(windowID: winID)
+                } else {
+                    cgImage = CGWindowListCreateImage(
+                        .null,
+                        .optionIncludingWindow,
+                        winID,
+                        [.bestResolution, .boundsIgnoreFraming]
+                    )
+                }
             } else {
-                cgImage = CGWindowListCreateImage(
-                    .infinite,
-                    .optionOnScreenOnly,
-                    kCGNullWindowID,
-                    [.bestResolution]
-                )
+                if #available(macOS 14.0, *) {
+                    cgImage = try? await ScreenCaptureBackend.shared.captureMainDisplay()
+                } else {
+                    cgImage = CGWindowListCreateImage(
+                        CGDisplayBounds(CGMainDisplayID()),
+                        .optionOnScreenOnly,
+                        kCGNullWindowID,
+                        [.bestResolution]
+                    )
+                }
             }
 
             guard let image = cgImage else { continue }
@@ -982,7 +1196,7 @@ enum ScreenAndInput {
 
             // Wait for next frame (except after last frame)
             if i < count - 1 {
-                usleep(UInt32(intervalMs * 1000))
+                try await Task.sleep(for: .milliseconds(intervalMs))
             }
         }
 

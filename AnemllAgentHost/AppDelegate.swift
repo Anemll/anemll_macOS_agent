@@ -2,11 +2,15 @@ import Cocoa
 import SwiftUI
 import Combine
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var viewModel: HostViewModel!
     private var cancellables = Set<AnyCancellable>()
+#if DEBUG
+    private var testWindow: NSWindow?
+#endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         viewModel = HostViewModel()
@@ -38,7 +42,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         checkForMultipleInstances()
 
         // Auto-start server if permissions are granted
-        if viewModel.screenCaptureAllowed && viewModel.accessibilityAllowed {
+        let testAutostart: Bool
+#if DEBUG
+        testAutostart = ProcessInfo.processInfo.environment["ANEMLL_AUTOSTART"] == "1"
+            || ProcessInfo.processInfo.arguments.contains("--autostart")
+#else
+        testAutostart = false
+#endif
+        if (viewModel.screenCaptureAllowed && viewModel.accessibilityAllowed) || testAutostart {
             viewModel.startServer()
         } else {
             // Auto-show popover if permissions are missing (helps user find the app)
@@ -46,6 +57,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.showPopover()
             }
         }
+
+#if DEBUG
+        // Expose the menu-bar-only UI as a regular window for accessibility smoke tests.
+        if ProcessInfo.processInfo.arguments.contains("--show-test-window") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.showTestWindow()
+            }
+        }
+#endif
     }
 
     private func checkForMultipleInstances() {
@@ -54,9 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard running.count > 1 else { return }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            Task { @MainActor in
-                self?.showMultipleInstancesAlert(count: running.count)
-            }
+            self?.showMultipleInstancesAlert(count: running.count)
         }
     }
 
@@ -79,6 +97,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
     }
+
+#if DEBUG
+    private func showTestWindow() {
+        let controller = NSHostingController(
+            rootView: ContentView().environmentObject(viewModel)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 420),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Anemll Agent Host Test"
+        window.contentViewController = controller
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        testWindow = window
+    }
+#endif
 
     @MainActor @objc private func togglePopover(_ sender: AnyObject?) {
         guard let button = statusItem.button else { return }
@@ -166,4 +205,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.image = makeStatusBarIcon(isRunning: isRunning)
     }
 }
-

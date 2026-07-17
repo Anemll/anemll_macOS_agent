@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AXBUILD0001ANEMLL0001 /* AccessibilityAutomation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AXREF0001ANEMLL0001 /* AccessibilityAutomation.swift */; };
+		AGENTBUILD001ANEMLL001 /* AgentIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = AGENTREF0001ANEMLL001 /* AgentIntegration.swift */; };
+		COREBUILD0001ANEMLL0001 /* AutomationCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = COREREF0001ANEMLL0001 /* AutomationCore.swift */; };
+		HTTPBUILD0001ANEMLL0001 /* HTTPTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = HTTPREF0001ANEMLL0001 /* HTTPTypes.swift */; };
+		SCBUILD0001ANEMLL0001 /* ScreenCaptureBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = SCREF0001ANEMLL0001 /* ScreenCaptureBackend.swift */; };
 		247598DA69F0CBEF967008C0 /* ScreenAndInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03A6E13B3FCD4ADE418E6088 /* ScreenAndInput.swift */; };
 		4603C48762705FBCD65566D3 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55C4F05153B97E1E2788549E /* ContentView.swift */; };
 		710BCE35BB5B0BA1BD2662AD /* AnemllAgentHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F2E2556D4C1CC6FA955D3BD /* AnemllAgentHostApp.swift */; };
@@ -19,6 +24,11 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AXREF0001ANEMLL0001 /* AccessibilityAutomation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityAutomation.swift; sourceTree = "<group>"; };
+		AGENTREF0001ANEMLL001 /* AgentIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIntegration.swift; sourceTree = "<group>"; };
+		COREREF0001ANEMLL0001 /* AutomationCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutomationCore.swift; sourceTree = "<group>"; };
+		HTTPREF0001ANEMLL0001 /* HTTPTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTPTypes.swift; sourceTree = "<group>"; };
+		SCREF0001ANEMLL0001 /* ScreenCaptureBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenCaptureBackend.swift; sourceTree = "<group>"; };
 		03A6E13B3FCD4ADE418E6088 /* ScreenAndInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenAndInput.swift; sourceTree = "<group>"; };
 		1BC717FE689D299D9C26335A /* HostViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostViewModel.swift; sourceTree = "<group>"; };
 		40BE2C844E335C663384FD7E /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -36,15 +46,20 @@
 		1212EBCC7B94927D2655B3FB /* AnemllAgentHost */ = {
 			isa = PBXGroup;
 			children = (
+				AXREF0001ANEMLL0001 /* AccessibilityAutomation.swift */,
+				AGENTREF0001ANEMLL001 /* AgentIntegration.swift */,
 				7F2E2556D4C1CC6FA955D3BD /* AnemllAgentHostApp.swift */,
 				40BE2C844E335C663384FD7E /* AppDelegate.swift */,
+				COREREF0001ANEMLL0001 /* AutomationCore.swift */,
 				ASSETS0002ANEMLL0002ASSET /* Assets.xcassets */,
 				55C4F05153B97E1E2788549E /* ContentView.swift */,
 				7F3716353126ADE867054BB4 /* CursorOverlay.swift */,
 				1BC717FE689D299D9C26335A /* HostViewModel.swift */,
+				HTTPREF0001ANEMLL0001 /* HTTPTypes.swift */,
 				6AE27F3CF6A4D351999C3BFF /* Info.plist */,
 				F5C6E5868F35D8DEBAEDC878 /* LocalHTTPServer.swift */,
 				03A6E13B3FCD4ADE418E6088 /* ScreenAndInput.swift */,
+				SCREF0001ANEMLL0001 /* ScreenCaptureBackend.swift */,
 				SKILL0002ANEMLL0002SKILL /* skills */,
 			);
 			path = AnemllAgentHost;
@@ -136,13 +151,18 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AXBUILD0001ANEMLL0001 /* AccessibilityAutomation.swift in Sources */,
+				AGENTBUILD001ANEMLL001 /* AgentIntegration.swift in Sources */,
 				710BCE35BB5B0BA1BD2662AD /* AnemllAgentHostApp.swift in Sources */,
 				C4FB9F7DBE7AC3437CDE8D23 /* AppDelegate.swift in Sources */,
+				COREBUILD0001ANEMLL0001 /* AutomationCore.swift in Sources */,
 				4603C48762705FBCD65566D3 /* ContentView.swift in Sources */,
 				A3EAE0F38AEBFFAE698E95CF /* CursorOverlay.swift in Sources */,
 				D3A2B527F8683E8642728ABC /* HostViewModel.swift in Sources */,
+				HTTPBUILD0001ANEMLL0001 /* HTTPTypes.swift in Sources */,
 				92809023BC55F38E192519B1 /* LocalHTTPServer.swift in Sources */,
 				247598DA69F0CBEF967008C0 /* ScreenAndInput.swift in Sources */,
+				SCBUILD0001ANEMLL0001 /* ScreenCaptureBackend.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -158,7 +178,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = ARRY5366Y3;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -180,7 +200,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.9;
+				MARKETING_VERSION = 0.2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.anemll.AnemllAgentHost;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;
@@ -254,7 +274,7 @@
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -313,7 +333,7 @@
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
@@ -326,7 +346,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 8;
 				DEVELOPMENT_TEAM = ARRY5366Y3;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -348,7 +368,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.9;
+				MARKETING_VERSION = 0.2.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.anemll.AnemllAgentHost;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
 				RUNTIME_EXCEPTION_ALLOW_JIT = NO;

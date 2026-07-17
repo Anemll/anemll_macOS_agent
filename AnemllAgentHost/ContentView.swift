@@ -4,6 +4,7 @@ import ApplicationServices
 
 struct ContentView: View {
     @EnvironmentObject var vm: HostViewModel
+    @State private var showingSkillInstaller = false
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
@@ -20,6 +21,10 @@ struct ContentView: View {
         }
         .padding(12)
         .onAppear { vm.refreshPermissions() }
+        .sheet(isPresented: $showingSkillInstaller) {
+            SkillInstallerView()
+                .environmentObject(vm)
+        }
     }
 
     private var mainContentView: some View {
@@ -147,9 +152,9 @@ struct ContentView: View {
                     vm.rotateToken()
                 }
                 Button("Install Skills") {
-                    vm.install()
+                    showingSkillInstaller = true
                 }
-                .help("Install skills to ~/.claude and ~/.codex directories")
+                .help("Choose agents and install their skill and MCP tools")
                 Spacer()
             }
 
@@ -200,7 +205,7 @@ struct ContentView: View {
                 .font(.caption)
             Spacer()
             Button("Sync") {
-                vm.syncSkill()
+                showingSkillInstaller = true
             }
             .font(.caption)
         }
@@ -223,6 +228,159 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+// MARK: - Multi-agent skill installer
+
+struct SkillInstallerView: View {
+    @EnvironmentObject private var vm: HostViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedPlatforms: Set<AgentPlatform> = []
+    @State private var initializedSelection = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Install Agent Skills")
+                        .font(.title2.bold())
+                    Text("Choose each client that should receive the ANEMLL skill and MCP tools.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
+            HStack {
+                Button("Select All") {
+                    selectedPlatforms = Set(AgentPlatform.allCases)
+                }
+                .buttonStyle(.link)
+                Button("Clear") {
+                    selectedPlatforms.removeAll()
+                }
+                .buttonStyle(.link)
+                Spacer()
+                Text("\(selectedPlatforms.count) selected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(AgentPlatform.allCases) { platform in
+                    Toggle(isOn: selectionBinding(for: platform)) {
+                        HStack(alignment: .top, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(platform.displayName)
+                                    .font(.body.weight(.medium))
+                                Text(platform.installSummary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(vm.isAgentDetected(platform) ? "Detected" : "Files will be prepared")
+                                .font(.caption2)
+                                .foregroundStyle(vm.isAgentDetected(platform) ? .green : .secondary)
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .disabled(vm.isInstallingSkills)
+
+                    if platform != AgentPlatform.allCases.last {
+                        Divider()
+                            .padding(.leading, 34)
+                    }
+                }
+            }
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.secondary.opacity(0.2))
+            }
+
+            if vm.isInstallingSkills {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Installing skills and MCP tools…")
+                        .font(.callout)
+                }
+            } else if !vm.agentInstallResults.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(vm.agentInstallResults) { result in
+                        HStack(alignment: .top, spacing: 7) {
+                            Image(systemName: resultIcon(result.status))
+                                .foregroundStyle(resultColor(result.status))
+                            Text("\(result.platform.displayName): \(result.detail)")
+                                .font(.caption)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+
+            Text("Existing settings are preserved. MCP configs reference ANEMLL_TOKEN; the token is never written to disk.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+
+            HStack {
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(vm.isInstallingSkills)
+                Spacer()
+                Button("Install Selected") {
+                    vm.installSkills(targets: selectedPlatforms)
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(selectedPlatforms.isEmpty || vm.isInstallingSkills)
+            }
+        }
+        .padding(20)
+        .frame(width: 540, height: 570)
+        .interactiveDismissDisabled(vm.isInstallingSkills)
+        .onAppear {
+            guard !initializedSelection else { return }
+            let detected = AgentPlatform.allCases.filter(vm.isAgentDetected)
+            selectedPlatforms = detected.isEmpty ? Set(AgentPlatform.allCases) : Set(detected)
+            initializedSelection = true
+        }
+    }
+
+    private func selectionBinding(for platform: AgentPlatform) -> Binding<Bool> {
+        Binding(
+            get: { selectedPlatforms.contains(platform) },
+            set: { isSelected in
+                if isSelected {
+                    selectedPlatforms.insert(platform)
+                } else {
+                    selectedPlatforms.remove(platform)
+                }
+            }
+        )
+    }
+
+    private func resultIcon(_ status: AgentInstallStatus) -> String {
+        switch status {
+        case .installed: "checkmark.circle.fill"
+        case .warning: "exclamationmark.triangle.fill"
+        case .failed: "xmark.circle.fill"
+        }
+    }
+
+    private func resultColor(_ status: AgentInstallStatus) -> Color {
+        switch status {
+        case .installed: .green
+        case .warning: .orange
+        case .failed: .red
         }
     }
 }

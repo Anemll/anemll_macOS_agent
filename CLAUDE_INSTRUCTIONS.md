@@ -1,528 +1,109 @@
-# Claude Code/Codex Instructions
+# Agent client instructions
 
-This document contains instructions for Claude Code agents to interact with the AnemllAgentHost UI automation server.
+The canonical, versioned agent guide is [AnemllAgentHost/skills/SKILL.md](AnemllAgentHost/skills/SKILL.md). It is bundled into the app and can be installed with native MCP tools for Droid, Pi, Claude, Codex, and Grok from the menu-bar UI.
 
-## Preconditions
+This file covers connection and integration essentials. Use the skill for complete endpoint examples, coordinate semantics, limits, Accessibility actions, capture behavior, and troubleshooting.
 
-1) The GUI app AnemllAgentHost is running in the logged-in macOS session (menu bar icon visible).
-2) In the app UI, both are green:
-   - Screen Recording: Allowed
-   - Accessibility: Allowed
-3) The server is running (UI shows Running) and listening on:
-   - http://127.0.0.1:8765
-4) You have the Bearer token from the app UI.
+## Connection contract
 
-Important: The HTTP server is localhost only. Commands must run on the same Mac that is running AnemllAgentHost. If Claude is on another machine, SSH into the target Mac and run curl there.
+- Run commands on the same Mac as AnemllAgentHost.
+- Base URL: `http://127.0.0.1:8765`
+- Authentication: `Authorization: Bearer TOKEN`
+- Never send a token as a URL query parameter.
+- REST JSON requests use `Content-Type: application/json`.
+- MCP uses one JSON-RPC message per `POST /mcp`.
 
-## MCP endpoint (Xcode / Copilot / other clients)
-
-The server also exposes an MCP JSON-RPC endpoint at:
-
-- `POST http://127.0.0.1:8765/mcp`
-
-Authentication is the same Bearer token (`Authorization: Bearer $ANEMLL_TOKEN`). If your MCP client can’t set headers, you can also use a query param: `http://127.0.0.1:8765/mcp?token=PASTE_TOKEN`.
-
-Quick check (list tools):
-
-```sh
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/mcp" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | python3 -m json.tool
-```
-
-Optional: Turn on "Show Cursor Overlay" in the menu app UI to draw a small red ring at the current cursor location. This makes the cursor visible in screenshots for alignment/debugging.
-
-## Claude Code permissions (avoid repeated bash prompts)
-
-If Claude Code keeps asking "Allow this bash command?", add a tight allowlist for the harness commands in `.claude/settings.local.json`. This keeps prompts limited to only the UI-automation calls.
-
-Minimal allowlist (paste under `permissions.allow`):
-
-```json
-[
-  "Bash(export ANEMLL_HOST=*:*)",
-  "Bash(export ANEMLL_TOKEN=*:*)",
-  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" \"$ANEMLL_HOST/health\")",
-  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" -X POST \"$ANEMLL_HOST/screenshot\"*)",
-  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" -H \"Content-Type: application/json\" -X POST \"$ANEMLL_HOST/click\" -d * )",
-  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" -H \"Content-Type: application/json\" -X POST \"$ANEMLL_HOST/type\" -d * )",
-  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" -H \"Content-Type: application/json\" -X POST \"$ANEMLL_HOST/move\" -d * )",
-  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" \"$ANEMLL_HOST/mouse\")",
-  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" \"$ANEMLL_HOST/windows\"*)",
-  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" -H \"Content-Type: application/json\" -X POST \"$ANEMLL_HOST/capture\" -d * )",
-  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" -H \"Content-Type: application/json\" -X POST \"$ANEMLL_HOST/click_window\" -d * )",
-  "Bash(curl -s -H \"Authorization: Bearer $ANEMLL_TOKEN\" -H \"Content-Type: application/json\" -X POST \"$ANEMLL_HOST/focus\" -d * )"
-]
-```
-
-If you prefer auto-allow when sandboxed, add this to your Claude settings and restart Claude Code:
-
-```json
-"sandbox": {
-  "enabled": true,
-  "autoAllowBashIfSandboxed": true
-}
-```
-
-## Environment setup (one-time per shell)
-
-```sh
+```bash
 export ANEMLL_HOST="http://127.0.0.1:8765"
-export ANEMLL_TOKEN="PASTE_TOKEN_FROM_MENU_APP"
+export ANEMLL_TOKEN="PASTE_TOKEN_FROM_APP"
 
-# sanity check
-echo "HOST=$ANEMLL_HOST"
-echo "TOKEN=[$ANEMLL_TOKEN]"
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" "$ANEMLL_HOST/health"
 ```
 
-## 0) Verify you are on the right machine + server
-
-```sh
-hostname
-lsof -nP -iTCP:8765 -sTCP:LISTEN
-```
-
-Expected: AnemllAgentHost is the process listening.
-
-## 1) Health check
-
-```sh
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  "$ANEMLL_HOST/health"
-```
-
-Expected:
+Expected for this release:
 
 ```json
-{"ok":true,"version":"0.1.8"}
+{"ok":true,"version":"0.2.1"}
 ```
 
-If you get `{"error":"unauthorized"}` then the token in the shell does not match the token shown in the app UI (or you are on the wrong Mac).
+A `401` response means the token is missing, stale, or from another running app instance. Copy the current token and avoid running multiple instances on port 8765.
 
-## 2) Take a screenshot
+## Recommended agent loop
 
-This writes a PNG to `/tmp/anemll_last.png` and returns metadata JSON.
+1. Call `/accessibility/tree` for compact UI state.
+2. Use `/accessibility/action` for an identified element.
+3. Use `/accessibility/wait` to confirm the transition.
+4. Combine deterministic steps with `/batch` to reduce round trips.
+5. Capture only for layout, custom controls, or visual verification.
 
-```sh
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -X POST "$ANEMLL_HOST/screenshot" | python -m json.tool
+This ordering is especially important for models configured with `noImageSupport`.
 
-ls -l /tmp/anemll_last.png
-```
-
-By default, screenshots include a small red cursor ring. To disable it:
-
-```sh
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
+```bash
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" \
   -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/screenshot" \
-  -d '{"cursor":false}' | python -m json.tool
+  -d '{"app":"TextEdit","max_depth":8,"max_elements":500}' \
+  "$ANEMLL_HOST/accessibility/tree"
 ```
 
-Claude workflow: After calling `/screenshot`, read `/tmp/anemll_last.png` and decide the next action based on the UI state.
+## MCP integration
 
-## 3) Click at coordinates (x,y)
-
-```sh
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
+```bash
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" \
   -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/click" \
-  -d '{"x":960,"y":540}'
+  -H "MCP-Protocol-Version: 2025-11-25" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+    "protocolVersion":"2025-11-25",
+    "capabilities":{},
+    "clientInfo":{"name":"local-agent","version":"1"}
+  }}' "$ANEMLL_HOST/mcp"
+
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "MCP-Protocol-Version: 2025-11-25" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  "$ANEMLL_HOST/mcp"
 ```
 
-Notes:
-- Default coordinates are global screen points (origin bottom-left).
-- If you are using pixel coordinates from `/screenshot`, pass `"space":"image_pixels"` to convert from image pixels (origin top-left).
+The text-first MCP tools are:
 
-Example using screenshot pixel coordinates:
+- `anemll_windows`
+- `anemll_activate`
+- `anemll_accessibility_tree`
+- `anemll_accessibility_action`
+- `anemll_accessibility_wait`
+- `anemll_batch`
+- Pointer, keyboard, window, capture, OCR, and burst tools
 
-```sh
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/click" \
-  -d '{"x":1920,"y":1080,"space":"image_pixels"}'
+## Safety
+
+- Limit interactions to the intended app and task.
+- Prefer exact `pid`, `window_id`, role, or accessibility identifier targeting.
+- Keep batches bounded and stop to observe when later actions depend on earlier state.
+- Verify consequential UI changes.
+- Do not enter secrets unless explicitly requested.
+- Do not bypass macOS permission prompts or attempt remote exposure of the listener.
+
+## Debug viewer
+
+The app copies a URL shaped like this:
+
+```text
+http://127.0.0.1:8765/debug#token=TOKEN
 ```
 
-## 4) Type text into the currently focused control
+The fragment is consumed by page JavaScript, removed from browser history, and converted to an authorization header for protected image/meta requests. Do not rewrite it as `?token=`.
 
-```sh
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/type" \
-  -d '{"text":"Hello from Claude Code"}'
+## Testing model compatibility
+
+The repository includes a no-image OpenAI-compatible benchmark:
+
+```bash
+python3 scripts/benchmark_model_harness.py \
+  --base-url http://192.168.1.68:8888/v1 \
+  --model deepseek-v4-flash-dspark-abliterated \
+  --api-key not-needed \
+  --harness-token "$ANEMLL_TOKEN" \
+  --iterations 6
 ```
 
-## 5) Move mouse to coordinates (x,y)
-
-```sh
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/move" \
-  -d '{"x":960,"y":540}'
-```
-
-If you are moving using screenshot pixel coordinates, add `"space":"image_pixels"` like in the click example above.
-
-## 6) Read current mouse position
-
-```sh
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  "$ANEMLL_HOST/mouse"
-```
-
-The response includes screen-point coords and (when available) `image_x`/`image_y` in screenshot pixel space.
-
----
-
-## Window-Based Commands (Recommended)
-
-**Window-based commands are faster and more precise than full-screen operations.** When controlling specific applications, prefer these commands over full-screen screenshot + click workflows.
-
-### 7) List all windows
-
-Returns all visible windows with their IDs, app names, titles, PIDs, and bounds.
-
-```sh
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  "$ANEMLL_HOST/windows" | python3 -m json.tool
-```
-
-To include off-screen windows:
-
-```sh
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  "$ANEMLL_HOST/windows?on_screen=false"
-```
-
-Response fields per window:
-- `id` - Window ID (use for precise targeting)
-- `app` - Application name (e.g., "Safari", "iPhone Mirroring")
-- `title` - Window title (may be empty for some windows)
-- `pid` - Process ID
-- `bounds` - `{x, y, w, h}` in screen points
-- `layer` - Window layer (0 = normal app, higher = system UI)
-- `alpha` - Opacity
-- `on_screen` - Visibility flag
-
-### 8) Capture a specific window
-
-Captures just one window to `/tmp/anemll_window.png`. **Much faster than full-screen capture.**
-
-**Image size limits for Claude Code:**
-- **1120 pixels** - Playwright MCP target (~1.15MP) - most reliable
-- **2000 pixels** - safe limit for sessions with many images (>20)
-- **8000 pixels** - hard limit
-
-Use `max_dimension` to auto-crop large windows (no scaling, preserves pixel accuracy):
-
-```sh
-# By app name (partial match, case-insensitive)
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/capture" \
-  -d '{"app": "iPhone Mirroring"}' | python3 -m json.tool
-
-# By window title
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/capture" \
-  -d '{"title": "Safari"}'
-
-# By window ID (from /windows response)
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/capture" \
-  -d '{"window_id": 1138}'
-
-# By PID
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/capture" \
-  -d '{"pid": 82416}'
-
-# Combine filters (app + title for precision)
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/capture" \
-  -d '{"app": "Xcode", "title": "HostViewModel"}'
-
-# With auto-trimming for Claude Code (recommended for automation)
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/capture" \
-  -d '{"app": "Safari", "max_dimension": "safe"}'
-```
-
-**`max_dimension` values:**
-| Value | Pixels | Use case |
-|-------|--------|----------|
-| `"playwright"` or `"claudecode"` | 1120 | **Recommended** - matches Playwright MCP |
-| `"safe"` | 2000 | Safe for many-image sessions |
-| `"max"` | 8000 | Hard API limit |
-| `0` (default) | none | No cropping |
-| `1500` (int) | 1500 | Custom value |
-
-**Cursor-aware cropping:** When cropping is needed, the image is cropped (NOT scaled) to keep the cursor visible. Coordinates remain pixel-accurate. If cursor is in the top half, bottom is cropped; if in bottom half, top is cropped (same for left/right).
-
-**Response with cropping:**
-```json
-{
-  "ok": true,
-  "w": 1120,
-  "h": 900,
-  "trimmed": true,
-  "original_w": 2688,
-  "original_h": 900,
-  "trim_x": 784,
-  "trim_y": 0
-}
-```
-
-**Important:** Use `trim_x` and `trim_y` to adjust click coordinates when image was cropped. For example, if you identify a button at pixel (500, 200) in the cropped image and `trim_x` was 784, the actual window coordinate is (500 + 784, 200) = (1284, 200).
-
-### 9) Click inside a specific window
-
-Click at a position relative to a window's top-left corner. **No need to calculate global screen coordinates.**
-
-```sh
-# Click center of window (default if no offset provided)
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/click_window" \
-  -d '{"title": "iPhone Mirroring"}'
-
-# Click at specific offset from window's top-left (in points)
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/click_window" \
-  -d '{"title": "iPhone Mirroring", "offset_x": 163, "offset_y": 125}'
-
-# Click using app name + offset
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/click_window" \
-  -d '{"app": "Safari", "offset_x": 100, "offset_y": 50}'
-```
-
-**Coordinate conversion**: Window capture images are at 2x retina scale. To convert image pixel coordinates to window point offsets, divide by 2.
-
-Example: If you see a button at pixel (326, 250) in the captured image, click at `offset_x: 163, offset_y: 125`.
-
-### 10) Move cursor to position inside a window
-
-Move cursor without clicking. Useful for hover actions or preparing for drag operations.
-
-```sh
-# Move to center of window
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/focus" \
-  -d '{"app": "Safari"}'
-
-# Move to specific position within window
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/focus" \
-  -d '{"title": "iPhone Mirroring", "offset_x": 163, "offset_y": 200}'
-```
-
-### 11) Burst capture (rapid image sequences)
-
-Capture multiple frames rapidly for animation analysis, video scrubbing, or detecting UI transitions.
-
-```sh
-# Capture 10 frames at 100ms intervals (10 fps) from a window
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/burst" \
-  -d '{"app": "iPhone Mirroring", "count": 10, "interval_ms": 100}'
-
-# Full-screen burst capture (no window targeting)
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/burst" \
-  -d '{"count": 5, "interval_ms": 200}'
-
-# With auto-cropping for Claude Code
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/burst" \
-  -d '{"app": "Safari", "count": 10, "interval_ms": 100, "max_dimension": "playwright"}'
-```
-
-**Parameters:**
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `count` | 10 | Number of frames (max 100) |
-| `interval_ms` | 100 | Milliseconds between frames (min 10) |
-| `max_dimension` | 0 | Auto-resize frames (see capture options) |
-| `resize_mode` | "crop" | "crop" or "scale" |
-
-**Response:**
-```json
-{
-  "ok": true,
-  "count": 10,
-  "requested": 10,
-  "interval_ms": 100,
-  "duration_ms": 923,
-  "fps": 9.75,
-  "frames": [
-    {"frame": 0, "path": "/tmp/anemll_burst_0.png", "w": 1120, "h": 900, "ts": 1738000000000},
-    {"frame": 1, "path": "/tmp/anemll_burst_1.png", "w": 1120, "h": 900, "ts": 1738000000100},
-    ...
-  ]
-}
-```
-
----
-
-### Window targeting options
-
-All window commands (`/capture`, `/click_window`, `/focus`) accept these identifiers:
-
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `window_id` | Exact window ID from `/windows` | `{"window_id": 1138}` |
-| `pid` | Process ID | `{"pid": 82416}` |
-| `app` | App name (partial, case-insensitive) | `{"app": "Safari"}` |
-| `title` | Window title (partial, case-insensitive) | `{"title": "iPhone Mirroring"}` |
-
-You can combine filters for precision: `{"app": "Xcode", "title": "HostViewModel"}`
-
-Priority when multiple are provided: `window_id` > `pid` > `app` > `title`
-
----
-
-### Recommended workflow for window automation
-
-**For controlling a specific app (e.g., iPhone Mirroring):**
-
-```sh
-# 1) List windows to find target
-curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" "$ANEMLL_HOST/windows" | python3 -m json.tool
-
-# 2) Capture target window (faster than full screen)
-curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/capture" -d '{"title": "iPhone Mirroring"}'
-
-# 3) Analyze /tmp/anemll_window.png to find UI elements
-
-# 4) Click inside window using relative coordinates
-# (Image pixels / 2 = window points for retina displays)
-curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/click_window" -d '{"title": "iPhone Mirroring", "offset_x": 163, "offset_y": 125}'
-
-# 5) Capture again to verify result
-curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/capture" -d '{"title": "iPhone Mirroring"}'
-```
-
-This is faster and more reliable than full-screen workflows because:
-- Smaller images to capture and analyze
-- No coordinate conversion between screen space and image space
-- Window position changes don't break automation
-- Works even if window is partially occluded
-
----
-
-### Suggested automation loop (Claude should follow this pattern)
-
-1) POST /screenshot
-2) Inspect /tmp/anemll_last.png
-3) Decide next action (click, type, etc.)
-4) Repeat until goal state is reached
-5) After each action, take another screenshot to confirm
-
-Example loop skeleton:
-
-```sh
-# 1) screenshot
-curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -X POST "$ANEMLL_HOST/screenshot" >/dev/null
-
-# 2) (Claude analyzes /tmp/anemll_last.png)
-
-# 3) action
-curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/click" -d '{"x":200,"y":150}' >/dev/null
-
-# 4) screenshot again
-curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" -X POST "$ANEMLL_HOST/screenshot" >/dev/null
-```
-
-## Troubleshooting
-
-**Connection refused / no reply (curl exit code 7):**
-- The AnemllAgentHost app is not running or the server is not started.
-- Fix:
-  - Look for the AnemllAgentHost icon in the macOS menu bar (top-right of screen).
-  - Click the icon and ensure the server shows "Running" (green indicator).
-  - If the app is not in the menu bar, launch it from Applications or Xcode.
-  - Click "Start" button in the app UI if the server is stopped.
-
-**`{"error":"unauthorized"}` response:**
-- The bearer token has changed or doesn't match.
-- Tokens rotate when the app restarts or when "Rotate Token" is clicked.
-- Fix:
-  - Ask the user to provide the current token from the AnemllAgentHost menu bar app UI.
-  - The token is displayed under "Bearer Token:" in the app popover.
-  - Re-export with the new token:
-
-```sh
-export ANEMLL_TOKEN="NEW_TOKEN_FROM_UI"
-```
-
-- Confirm process listening:
-
-```sh
-lsof -nP -iTCP:8765 -sTCP:LISTEN
-```
-
-**`screenCaptureNotAllowed` error:**
-- Screen Recording permission not granted to the GUI app.
-- Fix:
-  - System Settings -> Privacy and Security -> Screen and System Audio Recording -> enable AnemllAgentHost
-  - Quit and relaunch app
-
-**Click/type does not do anything:**
-- Accessibility permission missing (or target app blocks automation).
-- Fix:
-  - System Settings -> Privacy and Security -> Accessibility -> enable AnemllAgentHost
-  - Quit and relaunch app
-
-## Safety constraints (Claude must follow)
-
-- Only interact with apps/windows you explicitly intend to test.
-- Prefer small, reversible actions.
-- After any action that changes state, immediately take a screenshot to confirm.
-- Do not type secrets into UI fields unless explicitly instructed.
-
-## Optional
-
-If you want, add a small CLI wrapper (e.g., `ui.sh`) so Claude calls `ui shot`, `ui click 100 200`, `ui type "hi"` instead of raw curl.
+It executes only allowlisted metadata/Accessibility tools and wait-only batches. The JSON report includes model first-content and total latency, retries, action validity, harness execution latency, and transport errors.

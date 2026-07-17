@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core unit tests (Swift 6)
+        run: swift test
+      - name: App build
+        run: >-
+          xcodebuild -quiet
+          -project AnemllAgentHost.xcodeproj
+          -scheme AnemllAgentHost
+          -configuration Debug
+          CODE_SIGNING_ALLOWED=NO
+          build
