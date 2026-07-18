@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 final class CursorOverlay {
     private var window: NSWindow?
     private var timer: Timer?
@@ -25,8 +26,8 @@ final class CursorOverlay {
         w.makeKeyAndOrderFront(nil)
         window = w
 
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            self?.updatePosition()
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 15.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.updatePosition() }
         }
         if let timer {
             RunLoop.main.add(timer, forMode: .common)

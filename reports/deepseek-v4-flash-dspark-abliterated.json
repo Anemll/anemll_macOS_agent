@@ -1,0 +1,230 @@
+{
+  "base_url": "http://192.168.1.68:8888/v1",
+  "finished_at": 1784239250,
+  "harness": {
+    "initialize_ms": 11.12,
+    "tool_names": [
+      "anemll_screenshot",
+      "anemll_mouse",
+      "anemll_windows",
+      "anemll_capture",
+      "anemll_click",
+      "anemll_double_click",
+      "anemll_right_click",
+      "anemll_move",
+      "anemll_scroll",
+      "anemll_type",
+      "anemll_focus_window",
+      "anemll_click_window",
+      "anemll_scroll_window",
+      "anemll_paste",
+      "anemll_hotkey",
+      "anemll_drag",
+      "anemll_activate",
+      "anemll_accessibility_tree",
+      "anemll_accessibility_action",
+      "anemll_accessibility_wait",
+      "anemll_batch",
+      "anemll_burst"
+    ],
+    "tools_list_ms": 2.45
+  },
+  "iterations": 6,
+  "model": "deepseek-v4-flash-dspark-abliterated",
+  "runs": [
+    {
+      "attempts": 1,
+      "content": "{\"tool\":\"anemll_windows\",\"arguments\":{\"on_screen\":true}}",
+      "expected_tool": "anemll_windows",
+      "first_content_ms": 292.1145420004905,
+      "first_token_ms": 292.1123340001941,
+      "harness_execution": {
+        "is_error": false,
+        "latency_ms": 11.99
+      },
+      "index": 0,
+      "json_valid": true,
+      "plan": {
+        "arguments": {
+          "on_screen": true
+        },
+        "tool": "anemll_windows"
+      },
+      "reasoning_characters": 0,
+      "scenario": "window_metadata",
+      "tool_correct": true,
+      "total_ms": 564.5816670003114,
+      "usage": {
+        "completion_tokens": 18,
+        "prompt_tokens": 149,
+        "total_tokens": 167
+      }
+    },
+    {
+      "attempts": 1,
+      "content": "{\"tool\":\"anemll_accessibility_tree\",\"arguments\":{\"app\":\"AnemllAgentHost\",\"max_depth\":4,\"max_elements\":100}}",
+      "expected_tool": "anemll_accessibility_tree",
+      "first_content_ms": 345.183666999219,
+      "first_token_ms": 345.1802500003396,
+      "harness_execution": {
+        "is_error": false,
+        "latency_ms": 45.12
+      },
+      "index": 1,
+      "json_valid": true,
+      "plan": {
+        "arguments": {
+          "app": "AnemllAgentHost",
+          "max_depth": 4,
+          "max_elements": 100
+        },
+        "tool": "anemll_accessibility_tree"
+      },
+      "reasoning_characters": 0,
+      "scenario": "accessibility_tree",
+      "tool_correct": true,
+      "total_ms": 762.694625000222,
+      "usage": {
+        "completion_tokens": 32,
+        "prompt_tokens": 166,
+        "total_tokens": 198
+      }
+    },
+    {
+      "attempts": 1,
+      "content": "{\"tool\":\"anemll_batch\",\"arguments\":{\"actions\":[{\"type\":\"wait\",\"duration_ms\":1}]}}",
+      "expected_tool": "anemll_batch",
+      "first_content_ms": 314.6801669990964,
+      "first_token_ms": 314.6787919995404,
+      "harness_execution": {
+        "is_error": false,
+        "latency_ms": 4.68
+      },
+      "index": 2,
+      "json_valid": true,
+      "plan": {
+        "arguments": {
+          "actions": [
+            {
+              "duration_ms": 1,
+              "type": "wait"
+            }
+          ]
+        },
+        "tool": "anemll_batch"
+      },
+      "reasoning_characters": 0,
+      "scenario": "bounded_batch",
+      "tool_correct": true,
+      "total_ms": 650.9568329984177,
+      "usage": {
+        "completion_tokens": 25,
+        "prompt_tokens": 163,
+        "total_tokens": 188
+      }
+    },
+    {
+      "attempts": 1,
+      "content": "{\"tool\":\"anemll_windows\",\"arguments\":{\"on_screen\":true}}",
+      "expected_tool": "anemll_windows",
+      "first_content_ms": 344.4592499999999,
+      "first_token_ms": 344.45775000131107,
+      "harness_execution": {
+        "is_error": false,
+        "latency_ms": 4.46
+      },
+      "index": 3,
+      "json_valid": true,
+      "plan": {
+        "arguments": {
+          "on_screen": true
+        },
+        "tool": "anemll_windows"
+      },
+      "reasoning_characters": 0,
+      "scenario": "window_metadata",
+      "tool_correct": true,
+      "total_ms": 621.2353330010956,
+      "usage": {
+        "completion_tokens": 18,
+        "prompt_tokens": 149,
+        "total_tokens": 167
+      }
+    },
+    {
+      "attempts": 1,
+      "content": "{\"tool\":\"anemll_accessibility_tree\",\"arguments\":{\"app\":\"AnemllAgentHost\",\"max_depth\":4,\"max_elements\":100}}",
+      "expected_tool": "anemll_accessibility_tree",
+      "first_content_ms": 352.07387499940523,
+      "first_token_ms": 352.07166700092785,
+      "harness_execution": {
+        "is_error": false,
+        "latency_ms": 26.77
+      },
+      "index": 4,
+      "json_valid": true,
+      "plan": {
+        "arguments": {
+          "app": "AnemllAgentHost",
+          "max_depth": 4,
+          "max_elements": 100
+        },
+        "tool": "anemll_accessibility_tree"
+      },
+      "reasoning_characters": 0,
+      "scenario": "accessibility_tree",
+      "tool_correct": true,
+      "total_ms": 871.0726669996802,
+      "usage": {
+        "completion_tokens": 32,
+        "prompt_tokens": 166,
+        "total_tokens": 198
+      }
+    },
+    {
+      "attempts": 1,
+      "content": "{\"tool\":\"anemll_batch\",\"arguments\":{\"actions\":[{\"type\":\"wait\",\"duration_ms\":1}]}}",
+      "expected_tool": "anemll_batch",
+      "first_content_ms": 442.4019589987438,
+      "first_token_ms": 442.4007090001396,
+      "harness_execution": {
+        "is_error": false,
+        "latency_ms": 3.48
+      },
+      "index": 5,
+      "json_valid": true,
+      "plan": {
+        "arguments": {
+          "actions": [
+            {
+              "duration_ms": 1,
+              "type": "wait"
+            }
+          ]
+        },
+        "tool": "anemll_batch"
+      },
+      "reasoning_characters": 0,
+      "scenario": "bounded_batch",
+      "tool_correct": true,
+      "total_ms": 813.6972499996773,
+      "usage": {
+        "completion_tokens": 25,
+        "prompt_tokens": 163,
+        "total_tokens": 188
+      }
+    }
+  ],
+  "started_at": 1784239246,
+  "summary": {
+    "failed": 0,
+    "first_content_ms_p50": 344.82,
+    "first_content_ms_p95": 442.4,
+    "harness_execution_ms_p50": 8.34,
+    "harness_transport_errors": 0,
+    "reliability_percent": 100.0,
+    "successful": 6,
+    "total_ms_p50": 706.83,
+    "total_ms_p95": 871.07
+  }
+}

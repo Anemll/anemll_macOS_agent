@@ -1,117 +1,141 @@
-# macOS Agent Host (menu bar UI driver)
+# AnemllAgentHost
 
 [![ANEMLL](https://img.shields.io/badge/ANEMLL-GitHub-blue)](https://github.com/Anemll/anemll_macOS_agent)
 
-This repo contains a minimal macOS menu bar app (AnemllAgentHost) that exposes a localhost HTTP API for UI automation (screenshot, click, type). The instructions below are formatted for Claude Code/Codex to use the service via SSH + curl.
+AnemllAgentHost v0.2.1 is a local macOS menu-bar automation server for AI agents and test harnesses. It exposes bounded REST and MCP APIs for semantic Accessibility inspection, mouse and keyboard input, ScreenCaptureKit capture, OCR, waits, and low-round-trip action batches.
 
-## MCP (Model Context Protocol) endpoint
+The fastest path is text-first: inspect an Accessibility tree, act on a matching element, and wait for the resulting state. Screenshots remain available for visual or custom-drawn interfaces, while no-image models can operate entirely through compact text responses.
 
-The same localhost server also exposes an MCP JSON-RPC endpoint (Streamable HTTP style) at:
+## Highlights
 
-- `POST http://127.0.0.1:8765/mcp`
+- Semantic Accessibility tree, actions, and condition-based waits
+- Text-only, bounded batch execution for faster agent loops
+- App activation, paste, hotkeys, drag, clicks, movement, scrolling, and typing
+- Full-screen and per-window capture with OCR and measured timings
+- ScreenCaptureKit on macOS 14+, with a macOS 13 compatibility path
+- Retina-, resize-, and crop-aware image coordinate conversion
+- MCP Streamable HTTP-style JSON-RPC plus REST parity
+- One-click skill and MCP setup for Droid, Pi, Claude, Codex, and Grok
+- Swift 6 concurrency checks, unit tests, CI, and a model acceptance benchmark
 
-Auth is the same as the REST endpoints: `Authorization: Bearer $ANEMLL_TOKEN` (or `?token=...` if your MCP client can’t set headers).
+## Security
 
-Quick sanity check (list tools):
+- The listener is forced to `127.0.0.1:8765`; remote interfaces are not accepted.
+- A random 256-bit bearer token is generated at launch and can be rotated.
+- Protected requests accept the token only in the `Authorization` header—not in URL queries.
+- Browser origins are matched exactly against localhost, `127.0.0.1`, or `::1`.
+- Request headers, bodies, text, images, bursts, waits, trees, and batches are bounded.
+- Inline base64 capture skips disk output by default; no telemetry is collected.
 
-```bash
-curl -s \
-  -H "Authorization: Bearer $ANEMLL_TOKEN" \
-  -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/mcp" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+Do not log or commit the bearer token. The debug viewer uses a URL fragment so the token is not sent in the initial URL request:
+
+```text
+http://127.0.0.1:8765/debug#token=TOKEN
 ```
 
-## Base64-first Capture (Recommended)
+## Setup
 
-For fastest agent loops, request **inline base64 images** to avoid extra file reads:
+1. Build and launch `AnemllAgentHost.xcodeproj`, or open an installed build.
+2. Grant Screen Recording and Accessibility in the onboarding UI.
+3. Start the server and copy its bearer token.
+4. Click **Install Skills**, select the agent clients you use, and install their skill and MCP tools. Existing client settings are preserved.
+5. Export local variables before launching those clients:
+
+```bash
+export ANEMLL_HOST="http://127.0.0.1:8765"
+export ANEMLL_TOKEN="PASTE_TOKEN_FROM_APP"
+```
+
+6. Verify the server:
+
+```bash
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" "$ANEMLL_HOST/health"
+```
+
+## Semantic-first example
+
+```bash
+# Inspect TextEdit as compact text.
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"app":"TextEdit","max_depth":8,"max_elements":500}' \
+  "$ANEMLL_HOST/accessibility/tree"
+
+# Focus a matching text area and paste in one server round trip.
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"actions":[
+    {"type":"activate","app":"TextEdit"},
+    {"type":"accessibility_action","app":"TextEdit","role":"AXTextArea","action":"focus"},
+    {"type":"paste","text":"Hello from ANEMLL"}
+  ]}' "$ANEMLL_HOST/batch"
+```
+
+## Capture example
 
 ```bash
 curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" \
   -H "Content-Type: application/json" \
-  -X POST "$ANEMLL_HOST/capture" \
-  -d '{"title":"iPhone Mirroring","return_base64":true,"max_dimension":"playwright"}'
+  -d '{"app":"Safari","max_dimension":1120,"resize_mode":"scale","ocr":true}' \
+  "$ANEMLL_HOST/capture"
 ```
 
-## Overview tips
-- Use the lowest macOS screen resolution (1344x756) to reduce coordinate drift.
-- If testing iPhone UI, use iPhone screen sharing and keep the mirrored iPhone near the top-left of the screen.
+Capture responses include `capture_ms`, `encode_ms`, and `total_ms`. Set `return_base64:true` for an inline MCP/JSON image; `save_to_file` then defaults to false to avoid redundant I/O.
 
-## First-Time Setup (Onboarding)
+## MCP
 
-When you first launch the app, an **onboarding wizard** guides you through granting the required macOS permissions:
+The same server accepts one JSON-RPC message per `POST /mcp`:
 
-### Step 1: Screen Recording Permission
-1. Click **"Enable"** next to "Screen Recording"
-2. macOS will prompt you to open System Settings
-3. In **System Settings → Privacy & Security → Screen Recording**, toggle **AnemllAgentHost** ON
-4. Return to the app and click **"Check Permissions"**
+```bash
+curl -s -H "Authorization: Bearer $ANEMLL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "MCP-Protocol-Version: 2025-11-25" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  "$ANEMLL_HOST/mcp"
+```
 
-### Step 2: Accessibility Permission
-1. Click **"Enable"** next to "Accessibility"
-2. macOS will prompt you to open System Settings
-3. In **System Settings → Privacy & Security → Accessibility**, toggle **AnemllAgentHost** ON
-4. Return to the app and click **"Check Permissions"**
+`GET /mcp` returns 405 and JSON-RPC batches are rejected. Supported protocol versions are `2025-11-25`, `2025-06-18`, and `2025-03-26`.
 
-### Step 3: Complete Setup
-1. Once both permissions show green checkmarks, click **"Done"**
-2. The server will start automatically
-3. Copy the Bearer token to share with your Claude agent
+## Develop and verify
 
-> **Tip**: If permissions don't take effect, use the gear menu (⚙️) and select **"Restart App"**.
+Build without local signing:
 
-## After Reinstall or Recompile
+```bash
+xcodebuild -project AnemllAgentHost.xcodeproj \
+  -scheme AnemllAgentHost -configuration Debug \
+  CODE_SIGNING_ALLOWED=NO build
+```
 
-If you reinstall or recompile the app, macOS may cache stale permissions:
+Run Swift 6 core tests:
 
-1. Open the app and click the **gear menu** (⚙️)
-2. Select **"Reset Permissions"** to clear TCC database entries
-3. Select **"Restart App"** (or quit and relaunch manually)
-4. The onboarding wizard will appear again to re-grant permissions
+```bash
+swift test
+```
 
-Alternatively, use **"Reset & Restart"** to do both steps at once.
+Run non-destructive live API/security smoke tests:
 
-## Skill Sync
+```bash
+python3 scripts/smoke_test_harness.py --token "$ANEMLL_TOKEN" --capture
+```
 
-The app includes a bundled skill file for **Claude Code and Codex**. If you see **"Skill update available"**:
-1. Click **"Sync"** to copy the latest skill to:
-   - `~/.claude/skills/anemll-macos-agent/`
-   - `~/.codex/skills/custom/anemll-macos-agent/`
-2. This keeps your agent skill definitions in sync with the app version
+Run the configured no-image DeepSeek acceptance benchmark against a live local harness:
 
-## Quick Reference
+```bash
+python3 scripts/benchmark_model_harness.py \
+  --harness-token "$ANEMLL_TOKEN" \
+  --iterations 6
+```
 
-| Action | How |
-|--------|-----|
-| Start/Stop server | Click "Start" or "Stop" button |
-| Rotate token | Click "Rotate Token" |
-| Copy token | Click clipboard icon next to token |
-| Toggle cursor overlay | Use "Cursor Overlay" toggle |
-| Restart app | Gear menu → "Restart App" |
-| Reset permissions | Gear menu → "Reset Permissions" |
-| Reset + restart | Gear menu → "Reset & Restart" |
-| Open Privacy settings | Gear menu → "Open Privacy Settings" |
-| Sync skill file | Click "Sync" when update available (Claude + Codex) |
+The benchmark measures time to first content, total model latency, JSON/tool-selection reliability, harness latency, retries, and transport errors. Its default model is `deepseek-v4-flash-dspark-abliterated` at `http://192.168.1.68:8888/v1`.
 
-## Context (informational only)
+The checked-in acceptance baseline is [reports/deepseek-v4-flash-dspark-abliterated.json](reports/deepseek-v4-flash-dspark-abliterated.json).
 
-- The Agent runs on a host Mac with Xcode and the app installed (menu bar UI visible).
-- Claude runs inside Cursor and connects to that same host via SSH (Cursor server environment).
-- Claude and the Agent are therefore on the same host.
-- With this setup, Claude can view/control the app, run QC, and perform verification tasks.
+## Documentation
 
-## Claude Code/Codex Instructions
+- [Agent/API instructions](CLAUDE_INSTRUCTIONS.md)
+- [Canonical bundled skill](AnemllAgentHost/skills/SKILL.md)
+- [App distribution notes](DISTRIBUTION.md)
+- [Changelog](CHANGELOG.md)
+- [License](LICENSE) and [attribution notice](NOTICE)
 
-See **[CLAUDE_INSTRUCTIONS.md](CLAUDE_INSTRUCTIONS.md)** for detailed API documentation and usage instructions for Claude Code agents.
-
-## License
-
-Apache License 2.0 - See [LICENSE](LICENSE) for the full text.
-
-### Attribution
-
-If you use or redistribute this software, you must retain the [NOTICE](NOTICE) file or include the following attribution in your documentation or legal notices:
-
-> "This product includes software developed by ANEMLL."
-
-Copyright 2026 ANEMLL
+Copyright 2026 ANEMLL. Licensed under Apache License 2.0.

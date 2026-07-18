@@ -1,9 +1,15 @@
-AnemllAgentHost is a menu bar utility that lets AI coding assistants automate your Mac's UI. It runs a localhost-only HTTP server so tools like Claude Code and Codex can take screenshots, click elements, type text, and interact with application windows — all on the same machine.
+AnemllAgentHost is a menu bar utility that lets AI coding assistants automate your Mac's UI. It runs a localhost-only HTTP server so tools like Droid, Pi, Claude, Codex, and Grok can inspect interfaces, take screenshots, click elements, type text, and interact with application windows — all on the same machine.
+
+MARKETING DRAFT: The current full-capability target is intended for direct/Developer ID distribution and is not Mac App Store eligible as configured. See DISTRIBUTION.md.
 
 WHAT IT DOES
 
 - Runs a local HTTP API on 127.0.0.1:8765 for AI-driven UI automation
 - Takes full-screen or per-window screenshots
+- Inspects semantic Accessibility trees without screenshots
+- Presses, focuses, or updates matching accessibility elements
+- Waits for UI state instead of relying on fixed delays
+- Batches bounded actions to reduce agent round trips
 - Clicks, double-clicks, right-clicks at screen or window coordinates
 - Types text into any focused control
 - Lists and captures specific application windows
@@ -26,7 +32,7 @@ Menu Bar UI:
 - Copy Bearer token or Debug URL to clipboard
 - Rotate token for security
 - Toggle cursor overlay (red ring visible in screenshots)
-- Install skill files for Claude Code and Codex
+- Install skills and native MCP tool configuration for Droid, Pi, Claude, Codex, and Grok
 - Reset permissions and restart from the gear menu
 
 REST API Endpoints:
@@ -37,6 +43,9 @@ REST API Endpoints:
 - /move — move cursor
 - /scroll — scroll by pixel offset
 - /type — type text into focused control
+- /paste, /hotkey, /drag, /activate — fast input and app activation
+- /accessibility/tree, /accessibility/action, /accessibility/wait — semantic UI automation
+- /batch — execute bounded action sequences in one request
 - /windows — list visible windows with bounds
 - /capture — capture a specific window by app name, title, PID, or window ID
 - /click_window, /focus, /scroll_window — interact within a window
@@ -50,10 +59,12 @@ MCP Endpoint:
 SECURITY
 
 - Localhost only: binds to 127.0.0.1, rejects remote connections
-- Bearer token authentication on every request (auto-generated UUID)
+- Bearer-header authentication on protected requests (random 256-bit token)
+- Tokens are rejected in URL queries; the debug viewer uses a fragment token
+- Strict request-size, action-count, wait, burst, image, and text limits
 - No outbound network connections
 - No telemetry, analytics, or data collection
-- Screenshots written to /tmp/ and overwritten each capture
+- Inline captures avoid disk output by default; file output uses atomic replacement
 
 PERMISSIONS REQUIRED
 
@@ -66,4 +77,4 @@ DESIGNED FOR DEVELOPERS
 
 AnemllAgentHost bridges AI coding assistants and the macOS desktop. Use it to build automated testing workflows, UI verification pipelines, or AI agent loops that observe and interact with any application on your Mac.
 
-Requires macOS 14.0 (Sonoma) or later.
+Requires macOS 13.0 or later. macOS 14 and later use ScreenCaptureKit's modern screenshot path.

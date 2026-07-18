@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "anemll-macos-agent": {
+      "type": "http",
+      "url": "http://127.0.0.1:8765/mcp",
+      "headers": {
+        "Authorization": "Bearer ${ANEMLL_TOKEN}"
+      },
+      "oauth": false,
+      "timeoutMs": 65000,
+      "disabled": false
+    }
+  }
+}
